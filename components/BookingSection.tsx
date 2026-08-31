@@ -310,6 +310,52 @@ export function BookingSection({
                     </p>
                   </button>
                 </div>
+
+                {/* Visual 14-Lanes Picker for Bowling */}
+                {serviceType === "bowling" && (
+                  <div className="pt-2 space-y-2 bg-slate-950/70 p-4 rounded-2xl border border-white/10">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold text-slate-300 flex items-center gap-1.5">
+                        <span>🎯</span>
+                        <span>Selecciona tu Pista Brunswick™ (1 a 14):</span>
+                      </span>
+                      <span className="text-[11px] font-mono text-sky-400 font-bold">
+                        Pista {selectedLane.toString().padStart(2, "0")} Seleccionada {selectedLane >= 13 ? "🌟 VIP" : ""}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-7 sm:grid-cols-14 gap-1.5 font-mono">
+                      {Array.from({ length: 14 }, (_, i) => i + 1).map((num) => {
+                        const isSelected = selectedLane === num;
+                        const isVip = num >= 13;
+
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => {
+                              soundFX.playClick();
+                              setSelectedLane(num);
+                            }}
+                            className={`btn-tactile py-2 rounded-xl text-xs font-black transition-all flex flex-col items-center justify-center cursor-pointer border ${
+                              isSelected
+                                ? isVip
+                                  ? "bg-gradient-to-b from-amber-500 to-yellow-600 text-black border-yellow-300 shadow-lg shadow-amber-500/30 scale-105"
+                                  : "bg-[#0033CC] text-white border-sky-400 shadow-lg shadow-blue-600/30 scale-105"
+                                : isVip
+                                ? "bg-amber-950/40 text-amber-300 border-amber-500/30 hover:border-amber-400"
+                                : "bg-slate-900 text-slate-300 border-white/10 hover:border-white/20 hover:text-white"
+                            }`}
+                            title={isVip ? `Pista ${num} (Lounge VIP Neón)` : `Pista ${num} (Brunswick Estándar)`}
+                          >
+                            <span>{num.toString().padStart(2, "0")}</span>
+                            {isVip && <span className="text-[7px] font-sans font-bold uppercase tracking-tighter">VIP</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* STEP 2: DATE, TIME & DURATION */}
