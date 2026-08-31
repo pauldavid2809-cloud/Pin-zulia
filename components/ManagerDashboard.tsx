@@ -187,7 +187,7 @@ export function ManagerDashboard({
     );
   });
 
-  const [activeTab, setActiveTab] = useState<"pistas" | "comandas" | "reservas" | "pasarela" | "tasa" | "whatsapp">("pistas");
+  const [activeTab, setActiveTab] = useState<"pistas" | "reservas" | "pasarela" | "whatsapp" | "bytebridge" | "tasa">("pistas");
   const [kitchenOrders, setKitchenOrders] = useState<KitchenOrder[]>(INITIAL_KITCHEN_ORDERS);
   const [isSyncingDolarApi, setIsSyncingDolarApi] = useState<boolean>(false);
 
@@ -335,102 +335,20 @@ export function ManagerDashboard({
               <span>Imprimir Stands QR</span>
             </Link>
 
-            <button
-              onClick={() => {
-                soundFX.playClick();
-                onClose();
-              }}
-              className="btn-tactile p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Real-time KPIs Banner */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 sm:p-5 bg-slate-950/80 border-b border-white/5 font-mono">
-          <div className="bg-slate-900/90 p-3.5 rounded-2xl border border-sky-500/20">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-              Pistas en Juego
-            </span>
-            <div className="text-2xl font-black text-sky-400 pt-0.5">
-              {activeCount} / {lanes.length}
-            </div>
-            <span className="text-[10px] text-slate-500">
-              {occupancy}% aforo • {reservedCount} reservadas
-            </span>
-          </div>
-
-          <div className="bg-slate-900/90 p-3.5 rounded-2xl border border-emerald-500/20">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-              Ventas Estimadas Hoy
-            </span>
-            <div className="text-2xl font-black text-emerald-400 pt-0.5">
-              ${MANAGER_KPIS.todaySalesUSD} USD
-            </div>
-            <span className="text-[10px] text-slate-500">
-              ≈ {formatVES(MANAGER_KPIS.todaySalesUSD, bcvRate)}
-            </span>
-          </div>
-
-          <div className="bg-slate-900/90 p-3.5 rounded-2xl border border-amber-500/20">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-              Calzado Sanitizado en Uso
-            </span>
-            <div className="text-2xl font-black text-amber-300 pt-0.5">
-              {MANAGER_KPIS.shoesInUse} pares
-            </div>
-            <span className="text-[10px] text-slate-500">
-              Cabinas de luz UV activas
-            </span>
-          </div>
-
-          <div className="bg-slate-900/90 p-3.5 rounded-2xl border border-red-500/20">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                Tasa BCV Oficial
-              </span>
-              <span className="text-[9px] text-emerald-400 font-bold">DolarAPI</span>
-            </div>
-            <div className="text-2xl font-black text-red-400 pt-0.5">
-              {bcvRate.toFixed(2)} Bs/$
-            </div>
-            <span className="text-[10px] text-slate-500">
-              Sincronizada automáticamente
-            </span>
-          </div>
-        </div>
-
-        {/* Tabs Bar */}
-        <div className="flex items-center gap-2 px-6 pt-3 border-b border-white/5 overflow-x-auto no-scrollbar">
+            
           <button
             onClick={() => {
               soundFX.playClick();
-              setActiveTab("pistas");
-            }}
-            className={`btn-tactile pb-3 px-1 text-xs sm:text-sm font-black uppercase italic transition-colors border-b-2 shrink-0 cursor-pointer ${
-              activeTab === "pistas"
-                ? "border-sky-400 text-sky-400"
-                : "border-transparent text-slate-400 hover:text-white"
-            }`}
-          >
-            🎳 Control de 14 Pistas ({lanes.length})
-          </button>
-          <button
-            onClick={() => {
-              soundFX.playClick();
-              setActiveTab("comandas");
+              setActiveTab("bytebridge");
             }}
             className={`btn-tactile pb-3 px-1 text-xs sm:text-sm font-black uppercase italic transition-colors border-b-2 shrink-0 cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "comandas"
+              activeTab === "bytebridge"
                 ? "border-sky-400 text-sky-400"
                 : "border-transparent text-slate-400 hover:text-white"
             }`}
           >
-            <span>ðŸ‘¨â€ðŸ³ Comandas de Cocina</span>
-            <span className="px-1.5 py-0.2 bg-red-500 text-white rounded-full text-[10px] font-mono font-black">
-              {kitchenOrders.filter((o) => o.status !== "servido").length}
-            </span>
+            <Smartphone className="w-3.5 h-3.5 text-sky-400" />
+            <span>📱 App Android ByteBridge</span>
           </button>
           <button
             onClick={() => {

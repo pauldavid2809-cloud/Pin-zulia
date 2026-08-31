@@ -12,6 +12,7 @@ import { CurrencyMode } from "@/data/currencies";
 import { formatUSD, formatVES, generateBookingCode } from "@/lib/utils";
 import { soundFX } from "@/lib/soundEffects";
 import confetti from "canvas-confetti";
+import { AutoPaymentModal } from "@/components/AutoPaymentModal";
 import {
   Sparkles,
   Check,
@@ -95,6 +96,8 @@ export function BookingSection({
   const [notes, setNotes] = useState<string>("");
   const [wantsBumpers, setWantsBumpers] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [showAutoPayment, setShowAutoPayment] = useState<boolean>(false);
+  const [pendingBooking, setPendingBooking] = useState<BookingData | null>(null);
 
   // Pricing calculations
   const hourlyRateUSD = serviceType === "bowling" ? OFFICIAL_RATES.bowlingHourUSD : OFFICIAL_RATES.poolHourUSD;
@@ -130,25 +133,13 @@ export function BookingSection({
     setPlayerNames(updated);
   };
 
-  const handleGenerateBooking = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const handleStartBooking = (payOnline: boolean) => {
     if (!clientName.trim() || !clientPhone.trim()) {
       alert("Por favor ingresa tu nombre y número de WhatsApp para emitir tu Pase Digital.");
       return;
     }
 
     soundFX.playPinStrike();
-    soundFX.playStrikeFanfare();
-    setIsSubmitting(true);
-
-    try {
-      confetti({
-        particleCount: 70,
-        spread: 60,
-        origin: { y: 0.6 },
-      });
-    } catch {}
 
     const bookingCode = generateBookingCode();
     const packageName = serviceType === "bowling"
@@ -177,8 +168,79 @@ export function BookingSection({
       notes: wantsBumpers ? `Bumpers solicitados. ${notes}` : notes,
       wantsBumpers,
       createdAt: new Date().toISOString(),
-      status: "PENDING" as any,
+      status: payOnline ? "PENDIENTE" : "PENDIENTE",
     };
+
+    if (payOnline) {
+      setPendingBooking(booking);
+      setShowAutoPayment(true);
+    } else {
+      finalizeBooking(booking);
+    }
+  };
+
+  const handlePaymentApproved = (txId: string, bankRef: string) => {
+    if (!pendingBooking) return;
+    const confirmed: BookingData = {
+      ...pendingBooking,
+      status: "CONFIRMADA",
+      notes: `${pendingBooking.notes || ""} [Pago Aprobado ByteBridge Ref: ${bankRef}]`.trim(),
+    };
+    setShowAutoPayment(false);
+    finalizeBooking(confirmed);
+  };
+
+  const finalizeBooking = (booking: BookingData) => {
+    soundFX.playStrikeFanfare();
+    try {
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+    } catch {}
+
+    // Save to local storage cache for persistence
+    try {
+      const existing = JSON.parse(localStorage.getItem("pinzulia_bookings") || "[]");
+      existing.unshift(booking);
+      localStorage.setItem("pinzulia_bookings", JSON.stringify(existing.slice(0, 30)));
+    } catch {}
+
+    // Background automated dispatch via WhatsApp Bot (Parrandón Engine)
+    const shoesText = includeShoes && shoeSizes.length > 0
+      ? `${shoeSizes.length} pares (${shoeSizes.join(", ")})`
+      : "Sin calzado";
+
+    const autoMessage = `🎳 *PinZulia Bowling Boutique & Gastropub (1963)*\n\n` +
+      `¡Hola * ${booking.clientName}*! Tu reservación ${booking.status === "CONFIRMADA" ? "ha sido PAGADA y CONFIRMADA" : "ha sido generada"} exitosamente.\n\n` +
+      `🎟️ *Pase Digital:* #${booking.bookingCode}\n` +
+      `🎯 *Servicio:* ${booking.packageName}\n` +
+      `📅 *Fecha:* ${booking.date} a las ${booking.time}\n` +
+      `👥 *Jugadores:* ${booking.playersCount} Personas\n` +
+      `👟 *Calzado Sanitizado:* ${shoesText}\n` +
+      (booking.wantsBumpers ? `🛡️ *Bumpers:* Activados para niños\n` : "") +
+      `💵 *Total:` + (booking.status === "CONFIRMADA" ? " PAGADO" : " Estimado") + `:* ${booking.totalUSD.toFixed(2)} USD\n\n` +
+      `👉 *Abre tu Pase VIP con Código QR aquí:*\nhttps://pin-zulia.vercel.app/ticket/${booking.bookingCode}\n\n` +
+      `📍 *Ubicación:* C.C. Internacional, Av. 5 de Julio, Maracaibo.\n` +
+      `_Presenta este boleto digital en la recepción para ingresar a tu pista._`;
+
+    fetch("/api/whatsapp/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: booking.clientPhone,
+        message: autoMessage,
+      }),
+    }).catch(() => {});
+
+    onBookingSuccess(booking);
+  };
+
+  const handleGenerateBooking = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleStartBooking(false);
+  };
 
     // Save to local storage cache for persistence
     try {
@@ -233,6 +295,7 @@ export function BookingSection({
   ];
 
   return (
+    <>
     <section id="reservar-qr" className="py-12 sm:py-20 bg-[#040814] relative overflow-hidden">
       {/* Background Decor */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#0033CC]/10 rounded-full blur-3xl pointer-events-none" />
@@ -569,5 +632,18 @@ export function BookingSection({
         </div>
       </div>
     </section>
+
+      {/* ByteBridge Automated Payment Modal with Dynamic Decimals */}
+      {showAutoPayment && pendingBooking && (
+        <AutoPaymentModal
+          isOpen={showAutoPayment}
+          onClose={() => setShowAutoPayment(false)}
+          amountUSD={pendingBooking.totalUSD}
+          bcvRate={bcvRate}
+          referenceCode={pendingBooking.bookingCode}
+          onPaymentApproved={handlePaymentApproved}
+        />
+      )}
+    </>
   );
 }
