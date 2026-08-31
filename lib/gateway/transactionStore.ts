@@ -20,6 +20,20 @@ const transactions = global.__GATEWAY_TRANSACTIONS__;
 const bankLogs = global.__GATEWAY_BANK_LOGS__;
 const processedRefs = global.__GATEWAY_PROCESSED_REFS__;
 
+function isReferenceMatch(bankRef: string, userRef: string): boolean {
+  const b = bankRef.trim().toLowerCase();
+  const u = userRef.trim().toLowerCase();
+  if (!b || !u) return false;
+
+  return (
+    b === u ||
+    b.endsWith(u) ||
+    u.endsWith(b) ||
+    b.includes(u) ||
+    u.includes(b)
+  );
+}
+
 export const TransactionStore = {
   createTransaction: (data: Omit<Transaction, "id" | "status" | "createdAt" | "expiresAt">): Transaction => {
     const id = `tx_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
@@ -46,24 +60,46 @@ export const TransactionStore = {
     return Array.from(transactions.values()).reverse();
   },
 
+  // Customer submits their reference: Check if ByteBridge already captured it!
   updateBankReference: (id: string, bankReference: string, senderPhone?: string): Transaction | null => {
     const tx = transactions.get(id);
     if (!tx) return null;
-    tx.bankReference = bankReference;
+
+    tx.bankReference = bankReference.trim();
     if (senderPhone) tx.senderPhone = senderPhone;
+
+    // Scan existing bank logs (in case push arrived before customer typed reference)
+    if (tx.status === "PENDING") {
+      for (const log of bankLogs) {
+        const isMatch = isReferenceMatch(log.reference, tx.bankReference);
+        const amountDiff = Math.abs(tx.amountVES - log.amountVES);
+        const isAmountMatch = amountDiff <= 2.0;
+
+        if (isMatch && isAmountMatch) {
+          tx.status = "APPROVED";
+          tx.verifiedAt = new Date().toISOString();
+          tx.verifiedChannel = log.channel;
+          tx.bankReference = log.reference;
+          if (log.senderPhone) tx.senderPhone = log.senderPhone;
+          transactions.set(id, tx);
+          processedRefs.add(log.reference);
+          break;
+        }
+      }
+    }
+
     transactions.set(id, tx);
     return tx;
   },
 
-  // Multi-Channel Ingestion & Deduplication Algorithm
+  // ByteBridge Push Ingestion with STRICT Reference Matching
   ingestBankNotification: (notification: ParsedBankNotification): IngestResponse => {
     bankLogs.unshift(notification);
     if (bankLogs.length > 80) bankLogs.pop();
 
     const cleanRef = notification.reference.trim();
-    const lastDigits = cleanRef.slice(-6);
 
-    // 1. Idempotency Check: Was this exact reference already processed by another channel?
+    // 1. Idempotency Check: Was this exact reference already processed?
     if (processedRefs.has(cleanRef)) {
       return {
         success: true,
@@ -73,29 +109,14 @@ export const TransactionStore = {
       };
     }
 
-    // 2. Scan Pending Transactions for Match
+    // 2. Scan Pending Transactions: STRICT MATCH (Customer MUST provide reference)
     for (const [id, tx] of transactions.entries()) {
-      if (tx.status === "PENDING") {
+      if (tx.status === "PENDING" && tx.bankReference) {
+        const isRefMatch = isReferenceMatch(cleanRef, tx.bankReference);
         const amountDiff = Math.abs(tx.amountVES - notification.amountVES);
         const isAmountMatch = amountDiff <= 2.0;
 
-        let isRefMatch = false;
-        if (tx.bankReference) {
-          const userRef = tx.bankReference.trim();
-          isRefMatch =
-            cleanRef.endsWith(userRef) ||
-            userRef.endsWith(cleanRef) ||
-            userRef.slice(-6) === lastDigits ||
-            cleanRef === userRef;
-        } else {
-          // Time-window matching (within 5 min of transaction creation)
-          const ageMs = Date.now() - new Date(tx.createdAt).getTime();
-          if (ageMs < 5 * 60 * 1000 && amountDiff < 0.1) {
-            isRefMatch = true;
-          }
-        }
-
-        if (isAmountMatch && isRefMatch) {
+        if (isRefMatch && isAmountMatch) {
           tx.status = "APPROVED";
           tx.verifiedAt = new Date().toISOString();
           tx.verifiedChannel = notification.channel;
@@ -103,7 +124,6 @@ export const TransactionStore = {
           if (notification.senderPhone) tx.senderPhone = notification.senderPhone;
           transactions.set(id, tx);
 
-          // Mark reference as processed in deduplication set
           processedRefs.add(cleanRef);
 
           return {
@@ -121,11 +141,16 @@ export const TransactionStore = {
       success: true,
       status: "UNMATCHED_LOGGED",
       parsedData: notification,
-      message: `Pago [Canal: ${notification.channel}] registrado en auditoría (Ref: ${cleanRef}, Bs. ${notification.amountVES}), esperando orden de cliente.`,
+      message: `Pago [${notification.channel}] registrado en auditoría (Ref: ${cleanRef}, Bs. ${notification.amountVES}). Esperando que el cliente ingrese su referencia.`,
     };
   },
 
   getBankLogs: (): ParsedBankNotification[] => {
     return bankLogs;
+  },
+
+  resetLogs: () => {
+    bankLogs.length = 0;
+    processedRefs.clear();
   },
 };
