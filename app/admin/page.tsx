@@ -22,7 +22,7 @@ import {
   AlertCircle,
   Radio,
   RefreshCw,
-  Printer,
+  Printer, Camera,
   Smartphone,
   MessageSquare,
   QrCode,
@@ -277,6 +277,14 @@ export default function AdminPage() {
             <span className="text-emerald-400 font-bold">{bcvRate.toFixed(2)} Bs/$</span>
           </div>
 
+          <Link
+            href="/escanear"
+            onClick={() => soundFX.playClick()}
+            className="btn-tactile inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs font-mono shadow-md shadow-blue-600/25"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            <span>Escanear QR</span>
+          </Link>
           <Link
             href="/pistas-qr"
             target="_blank"
