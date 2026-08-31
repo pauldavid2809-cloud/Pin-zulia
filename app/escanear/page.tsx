@@ -22,6 +22,9 @@ import {
   Sparkles,
   ExternalLink,
   Zap,
+  AlertTriangle,
+  Ban,
+  Clock,
 } from "lucide-react";
 
 const SAMPLE_BOOKINGS = [
@@ -38,7 +41,8 @@ const SAMPLE_BOOKINGS = [
     shoeSizes: ["39 EU", "40 EU", "41 EU", "42 EU", "42 EU"],
     shoesCount: 5,
     totalUSD: 37.5,
-    status: "CONFIRMADA",
+    status: "EN_PISTA", // Already in lane sample
+    checkedInAt: "07:02 PM",
   },
   {
     bookingCode: "PIN-7402",
@@ -61,14 +65,17 @@ export default function EscanearPage() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [scannedResult, setScannedResult] = useState<any | null>(null);
   const [checkInSuccess, setCheckInSuccess] = useState<boolean>(false);
+  const [isCooldown, setIsCooldown] = useState<boolean>(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
 
   const scannerRef = useRef<any>(null);
   const readerElementId = "qr-reader-viewport";
+  const isProcessingRef = useRef<boolean>(false);
 
   const lookupBooking = (rawCode: string) => {
     let cleanCode = rawCode.trim().toUpperCase();
 
-    // If QR contains full URL (e.g. https://pin-zulia.vercel.app/ticket/PIN-7401)
+    // If QR contains full URL
     if (cleanCode.includes("/TICKET/")) {
       const parts = cleanCode.split("/TICKET/");
       cleanCode = parts[parts.length - 1].replace(/[^A-Z0-9-]/g, "");
@@ -114,31 +121,71 @@ export default function EscanearPage() {
   };
 
   const handleProcessCode = (codeText: string) => {
+    if (isProcessingRef.current || isCooldown) return;
+    isProcessingRef.current = true;
+
     const booking = lookupBooking(codeText);
+
     if (booking) {
-      soundFX.playPinStrike();
-      soundFX.playStrikeFanfare();
-      try {
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      } catch {}
+      const isAlreadyUsed = booking.status === "EN_PISTA" || booking.status === "UTILIZADO";
+
+      if (isAlreadyUsed) {
+        // Warning sound & alert for duplicate scanning
+        soundFX.playBuzzer();
+      } else {
+        // Success celebration
+        soundFX.playPinStrike();
+        soundFX.playStrikeFanfare();
+        try {
+          confetti({
+            particleCount: 80,
+            spread: 70,
+            origin: { y: 0.6 },
+          });
+        } catch {}
+      }
+
       setScannedResult(booking);
       setCheckInSuccess(false);
 
-      // Stop camera once scanned successfully
-      stopCamera();
+      // Trigger 3-second scanner debounce cooldown
+      setIsCooldown(true);
+      setCooldownSeconds(3);
     } else {
+      soundFX.playBuzzer();
       alert("No se encontró una reservación válida con ese código.");
+      isProcessingRef.current = false;
     }
   };
+
+  // Cooldown timer effect
+  useEffect(() => {
+    if (cooldownSeconds > 0) {
+      const timer = setTimeout(() => {
+        setCooldownSeconds((prev) => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (cooldownSeconds === 0 && isCooldown) {
+      setIsCooldown(false);
+      isProcessingRef.current = false;
+    }
+  }, [cooldownSeconds, isCooldown]);
 
   const handleManualSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualCode.trim()) return;
+    isProcessingRef.current = false;
     handleProcessCode(manualCode);
+  };
+
+  const handleResetForNextScan = () => {
+    soundFX.playClick();
+    setScannedResult(null);
+    setCheckInSuccess(false);
+    setManualCode("");
+    setIsCooldown(false);
+    setCooldownSeconds(0);
+    isProcessingRef.current = false;
   };
 
   const startCamera = async () => {
@@ -162,9 +209,7 @@ export default function EscanearPage() {
         (decodedText: string) => {
           handleProcessCode(decodedText);
         },
-        () => {
-          // ignore frame decode errors
-        }
+        () => {}
       );
     } catch (err: any) {
       console.error("Camera error:", err);
@@ -197,11 +242,18 @@ export default function EscanearPage() {
 
   const handleConfirmCheckIn = () => {
     if (!scannedResult) return;
+    if (scannedResult.status === "EN_PISTA" || scannedResult.status === "UTILIZADO") {
+      soundFX.playBuzzer();
+      alert("Este pase ya fue canjeado anteriormente. No se puede realizar doble check-in.");
+      return;
+    }
+
     soundFX.playStrikeFanfare();
 
     const updated = {
       ...scannedResult,
       status: "EN_PISTA",
+      checkedInAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
 
     // Save to localStorage
@@ -215,6 +267,8 @@ export default function EscanearPage() {
     setScannedResult(updated);
     setCheckInSuccess(true);
   };
+
+  const isAlreadyUsed = scannedResult && (scannedResult.status === "EN_PISTA" || scannedResult.status === "UTILIZADO");
 
   return (
     <div className="min-h-screen bg-[#040814] text-slate-100 p-3 sm:p-6 selection:bg-[#0033CC] selection:text-white flex flex-col">
@@ -245,11 +299,11 @@ export default function EscanearPage() {
               Escáner de Pases QR PinZulia
             </h1>
             <p className="text-xs text-slate-400 font-mono">
-              Apunta la cámara al código QR del cliente o ingresa el código #PIN.
+              Control de acceso con protección anti-duplicados y enfriamiento entre lecturas.
             </p>
           </div>
 
-          {/* 3. CAMERA VIEWFINDER (HTML5-QRCODE CONTAINER) */}
+          {/* 3. CAMERA VIEWFINDER & COOLDOWN OVERLAY */}
           <div className="relative aspect-square max-w-[280px] sm:max-w-[320px] mx-auto bg-black rounded-2xl border-2 border-sky-500/40 overflow-hidden flex flex-col items-center justify-center shadow-2xl">
             <div id={readerElementId} className="w-full h-full object-cover" />
 
@@ -270,11 +324,29 @@ export default function EscanearPage() {
               </div>
             )}
 
+            {/* Active Scanning Indicator / Laser Line */}
+            {isCameraActive && !isCooldown && (
+              <div className="pointer-events-none absolute inset-x-8 top-1/2 -translate-y-1/2 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_12px_#ef4444] animate-pulse z-10" />
+            )}
+
+            {/* Cooldown Overlay */}
+            {isCameraActive && isCooldown && (
+              <div className="absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center space-y-2 z-20 animate-in fade-in">
+                <Clock className="w-8 h-8 text-amber-300 animate-spin" />
+                <span className="text-xs font-mono font-bold text-amber-300 uppercase tracking-wider">
+                  Pausa entre lecturas ({cooldownSeconds}s)
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Procesando boleto actual...
+                </span>
+              </div>
+            )}
+
             {isCameraActive && (
               <button
                 type="button"
                 onClick={stopCamera}
-                className="btn-tactile absolute top-2 right-2 z-20 px-2.5 py-1 rounded-lg bg-black/70 text-slate-300 hover:text-white border border-white/20 text-[10px] font-mono"
+                className="btn-tactile absolute top-2 right-2 z-30 px-2.5 py-1 rounded-lg bg-black/80 text-slate-300 hover:text-white border border-white/20 text-[10px] font-mono"
               >
                 Pausar
               </button>
@@ -311,18 +383,52 @@ export default function EscanearPage() {
             </div>
           </form>
 
-          {/* 5. VERIFIED TICKET RESULT CARD */}
+          {/* 5. VERIFIED TICKET RESULT CARD OR DUPLICATE WARNING */}
           {scannedResult && (
-            <div className="p-4 sm:p-5 rounded-2xl bg-emerald-950/80 border-2 border-emerald-500 space-y-4 animate-in zoom-in-95 font-mono shadow-2xl">
-              <div className="flex items-center justify-between border-b border-emerald-500/30 pb-3">
-                <span className="text-xs font-black text-emerald-300 flex items-center gap-1.5 font-sans uppercase italic">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Pase Verificado & Activo</span>
+            <div
+              className={`p-4 sm:p-5 rounded-2xl border-2 space-y-4 animate-in zoom-in-95 font-mono shadow-2xl ${
+                isAlreadyUsed && !checkInSuccess
+                  ? "bg-red-950/85 border-red-500"
+                  : "bg-emerald-950/80 border-emerald-500"
+              }`}
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <span
+                  className={`text-xs font-black flex items-center gap-1.5 font-sans uppercase italic ${
+                    isAlreadyUsed && !checkInSuccess ? "text-red-300" : "text-emerald-300"
+                  }`}
+                >
+                  {isAlreadyUsed && !checkInSuccess ? (
+                    <>
+                      <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
+                      <span>⚠️ BOLETO YA CANJEADO / YA EN PISTA</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>Pase Verificado & Activo</span>
+                    </>
+                  )}
                 </span>
                 <span className="text-sm font-mono font-black text-amber-300 bg-black/40 px-2.5 py-0.5 rounded border border-amber-500/40">
                   #{scannedResult.bookingCode}
                 </span>
               </div>
+
+              {/* Duplicate Alert Notice */}
+              {isAlreadyUsed && !checkInSuccess && (
+                <div className="p-3 bg-red-900/60 border border-red-500/40 rounded-xl text-xs text-red-200 font-sans space-y-1">
+                  <div className="font-bold flex items-center gap-1 text-red-100">
+                    <Ban className="w-4 h-4 text-red-300" />
+                    <span>Intento de reutilización detectado</span>
+                  </div>
+                  <p className="text-[11px] text-red-300">
+                    Este boleto ya fue validado e ingresado a la pista
+                    {scannedResult.checkedInAt ? ` a las ${scannedResult.checkedInAt}` : ""}.
+                    No es posible realizar doble check-in con el mismo QR.
+                  </p>
+                </div>
+              )}
 
               {/* Ticket Details Grid */}
               <div className="grid grid-cols-2 gap-2.5 text-xs bg-slate-950/90 p-3.5 rounded-xl border border-white/10">
@@ -355,7 +461,7 @@ export default function EscanearPage() {
                 </div>
               </div>
 
-              {/* Shoes sizes detail if present */}
+              {/* Shoes sizes detail */}
               {scannedResult.shoeSizes && scannedResult.shoeSizes.length > 0 && (
                 <div className="p-2.5 bg-slate-950/60 rounded-xl border border-white/5 space-y-1">
                   <span className="text-[10px] text-amber-300 font-bold flex items-center gap-1">
@@ -372,30 +478,53 @@ export default function EscanearPage() {
                 </div>
               )}
 
-              {/* Check-In Action Button */}
-              {!checkInSuccess ? (
+              {/* Actions Button Group */}
+              <div className="space-y-2 pt-1 font-sans">
+                {!checkInSuccess ? (
+                  isAlreadyUsed ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="w-full py-3.5 rounded-xl bg-red-950/60 text-red-400 border border-red-500/30 font-bold text-xs uppercase cursor-not-allowed opacity-75 flex items-center justify-center gap-2"
+                    >
+                      <Ban className="w-4 h-4" />
+                      <span>Pase Ya Utilizado Previamente</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleConfirmCheckIn}
+                      className="btn-tactile w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-xs uppercase italic tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-900/50 border border-white/20"
+                    >
+                      <Play className="w-4 h-4" />
+                      <span>Realizar Check-In & Entregar Pista</span>
+                    </button>
+                  )
+                ) : (
+                  <div className="p-3 bg-sky-950/80 border border-sky-500/40 rounded-xl text-center space-y-1 animate-in zoom-in-95">
+                    <div className="text-xs font-bold text-sky-300">
+                      🎳 ¡Check-In Exitoso! Pista {scannedResult.laneNumber || "07"} Activada en el Sistema.
+                    </div>
+                    <Link
+                      href={`/pista/${scannedResult.laneNumber || "07"}`}
+                      className="inline-flex items-center gap-1 text-[11px] text-white underline font-bold pt-1"
+                    >
+                      <span>Abrir Marcador Digital de la Pista</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+                )}
+
+                {/* Reset & Scan Next Ticket Button */}
                 <button
                   type="button"
-                  onClick={handleConfirmCheckIn}
-                  className="btn-tactile w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-xs uppercase italic tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-900/50 font-sans border border-white/20"
+                  onClick={handleResetForNextScan}
+                  className="btn-tactile w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 text-xs font-bold font-mono flex items-center justify-center gap-2 cursor-pointer transition-colors"
                 >
-                  <Play className="w-4 h-4" />
-                  <span>Realizar Check-In & Entregar Pista</span>
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Escanear Siguiente Boleto</span>
                 </button>
-              ) : (
-                <div className="p-3 bg-sky-950/80 border border-sky-500/40 rounded-xl text-center space-y-1 animate-in zoom-in-95">
-                  <div className="text-xs font-bold text-sky-300">
-                    🎳 ¡Check-In Exitoso! Pista {scannedResult.laneNumber || "07"} Iniciada en el Sistema.
-                  </div>
-                  <Link
-                    href={`/pista/${scannedResult.laneNumber || "07"}`}
-                    className="inline-flex items-center gap-1 text-[11px] text-white underline font-bold pt-1"
-                  >
-                    <span>Abrir Marcador de la Pista</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </Link>
-                </div>
-              )}
+              </div>
             </div>
           )}
         </div>

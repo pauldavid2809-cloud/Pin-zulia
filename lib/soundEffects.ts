@@ -166,4 +166,27 @@ class SoundFXEngine {
   }
 }
 
+
+  // Warning / Error Buzzer (e.g. already used ticket)
+  public playBuzzer() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      const ctx = this.ctx;
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.setValueAtTime(110, now + 0.15);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } catch {}
+  }
+
 export const soundFX = new SoundFXEngine();
