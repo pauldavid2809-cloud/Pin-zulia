@@ -32,7 +32,8 @@ import {
 } from "lucide-react";
 import { ByteBridgeSettings } from "@/components/ByteBridgeSettings";
 import { WhatsAppBotManager } from "@/components/WhatsAppBotManager";
-import { TransactionStore, Transaction, ParsedBankNotification, IngestionChannel } from "@/lib/gateway/transactionStore";
+import { TransactionStore } from "@/lib/gateway/transactionStore";
+import type { Transaction, ParsedBankNotification, IngestionChannel } from "@/lib/gateway/types";
 
 const DEFAULT_BOOKINGS = [
   {

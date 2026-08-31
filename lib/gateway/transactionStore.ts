@@ -1,3 +1,4 @@
+export type { Transaction, ParsedBankNotification, IngestResponse, IngestionChannel } from "./types";
 import { Transaction, ParsedBankNotification, IngestResponse } from "./types";
 import { supabase } from "@/lib/supabaseClient";
 
