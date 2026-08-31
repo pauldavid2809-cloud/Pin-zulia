@@ -48,7 +48,7 @@ export function Hero({ onReserveClick, onMenuClick }: HeroProps) {
             {/* Heritage Pill Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#0033CC] text-white text-xs font-black uppercase tracking-wider shadow-lg border border-white/20">
               <span className="text-[#ED1C24] text-sm">ðŸ’¥</span>
-              <span>BOWLING BOUTIQUE DESDE 1963</span>
+              <span>BOWLING BOUTIQUE & GASTROPUB 1963</span>
             </div>
 
             {/* Main Brand Title with 3D Cobalt Blue Extrusion */}
@@ -71,7 +71,7 @@ export function Hero({ onReserveClick, onMenuClick }: HeroProps) {
                 className="btn-tactile flex items-center gap-2 bg-[#ED1C24] hover:bg-[#D8001D] text-white font-black px-6 py-3.5 rounded-2xl shadow-xl shadow-red-600/30 text-sm uppercase italic tracking-wider border-2 border-white/30 cursor-pointer"
               >
                 <Calendar className="w-4 h-4" />
-                <span>Reservar Pista Online</span>
+                <span>Reservar por QR</span>
                 <ArrowUpRight className="w-4 h-4 text-white" />
               </button>
 

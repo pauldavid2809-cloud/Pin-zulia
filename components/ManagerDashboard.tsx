@@ -1,3 +1,45 @@
+const DEFAULT_BOOKINGS = [
+  {
+    bookingCode: "PIN-7401",
+    clientName: "Alejandro Morales",
+    clientPhone: "0414 1234567",
+    packageName: "Pista de Bowling (1h)",
+    serviceType: "bowling",
+    date: new Date().toISOString().split("T")[0],
+    time: "07:00 PM",
+    playersCount: 5,
+    shoesCount: 5,
+    totalUSD: 37.5,
+    status: "EN_PISTA",
+  },
+  {
+    bookingCode: "PIN-7402",
+    clientName: "Familia González",
+    clientPhone: "0424 9876543",
+    packageName: "Mesa de Pool Diamond (2h)",
+    serviceType: "pool",
+    date: new Date().toISOString().split("T")[0],
+    time: "08:30 PM",
+    playersCount: 4,
+    shoesCount: 0,
+    totalUSD: 40.0,
+    status: "CONFIRMADA",
+  },
+  {
+    bookingCode: "PIN-7403",
+    clientName: "Grupo Occidental VIP",
+    clientPhone: "0412 5551234",
+    packageName: "Pista de Bowling (2h)",
+    serviceType: "bowling",
+    date: new Date().toISOString().split("T")[0],
+    time: "09:30 PM",
+    playersCount: 5,
+    shoesCount: 5,
+    totalUSD: 62.5,
+    status: "PENDIENTE",
+  },
+];
+
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -107,6 +149,42 @@ export function ManagerDashboard({
   const [lanes, setLanes] = useState<BowlingLane[]>(PINZULIA_LANES);
   const [tempRate, setTempRate] = useState<string>(bcvRate.toFixed(2));
   const [rateSaved, setRateSaved] = useState<boolean>(false);
+  const [bookingList, setBookingList] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("pinzulia_bookings");
+      if (stored) {
+        try { return JSON.parse(stored); } catch {}
+      }
+    }
+    return DEFAULT_BOOKINGS;
+  });
+  const [searchQuery, setSearchQuery] = useState<string>("");
+
+  const handleCheckInBooking = (code: string) => {
+    setBookingList((prev) =>
+      prev.map((b) =>
+        b.bookingCode === code ? { ...b, status: "EN_PISTA" } : b
+      )
+    );
+    try {
+      const stored = JSON.parse(localStorage.getItem("pinzulia_bookings") || "[]");
+      const updated = stored.map((b: any) =>
+        b.bookingCode === code ? { ...b, status: "EN_PISTA" } : b
+      );
+      localStorage.setItem("pinzulia_bookings", JSON.stringify(updated));
+    } catch {}
+  };
+
+  const filteredBookings = bookingList.filter((b) => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      (b.bookingCode && b.bookingCode.toLowerCase().includes(q)) ||
+      (b.clientName && b.clientName.toLowerCase().includes(q)) ||
+      (b.clientPhone && b.clientPhone.includes(q))
+    );
+  });
+
   const [activeTab, setActiveTab] = useState<"pistas" | "comandas" | "reservas" | "pasarela" | "tasa">("pistas");
   const [kitchenOrders, setKitchenOrders] = useState<KitchenOrder[]>(INITIAL_KITCHEN_ORDERS);
   const [isSyncingDolarApi, setIsSyncingDolarApi] = useState<boolean>(false);
@@ -797,51 +875,137 @@ export function ManagerDashboard({
             </div>
           )}
 
-          {/* TAB 4: RESERVATIONS */}
+          {/* TAB 4: QR RESERVATIONS & RECEPTION */}
           {activeTab === "reservas" && (
-            <div className="space-y-3">
-              <div className="bg-slate-900/90 rounded-2xl border border-white/10 overflow-hidden">
-                <table className="w-full text-left text-xs text-slate-300">
-                  <thead className="bg-slate-950 text-slate-400 font-bold uppercase text-[10px] border-b border-white/10 font-mono">
-                    <tr>
-                      <th className="p-3">Código</th>
-                      <th className="p-3">Cliente</th>
-                      <th className="p-3">Pista</th>
-                      <th className="p-3">Turno</th>
-                      <th className="p-3">Jugadores</th>
-                      <th className="p-3">Total</th>
-                      <th className="p-3">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 font-mono">
-                    <tr>
-                      <td className="p-3 font-bold text-sky-400">#PIN-501</td>
-                      <td className="p-3 font-bold text-white font-sans">Mauricio Urdaneta</td>
-                      <td className="p-3">Pista 07</td>
-                      <td className="p-3">07:00 PM</td>
-                      <td className="p-3">5 pax</td>
-                      <td className="p-3 font-bold text-emerald-400">$25.00</td>
-                      <td className="p-3">
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
-                          ✓ Verificada Auto (Email)
-                        </span>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="p-3 font-bold text-sky-400">#PIN-502</td>
-                      <td className="p-3 font-bold text-white font-sans">Banco Occidental (Corporativo)</td>
-                      <td className="p-3">Pistas 05 y 06</td>
-                      <td className="p-3">08:30 PM</td>
-                      <td className="p-3">12 pax</td>
-                      <td className="p-3 font-bold text-emerald-400">$130.00</td>
-                      <td className="p-3">
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
-                          ✓ Confirmada QR
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+            <div className="space-y-4">
+              {/* Search & Actions Bar */}
+              <div className="p-4 bg-slate-900/90 rounded-2xl border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="relative w-full sm:w-80">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Buscar por código #PIN o cliente..."
+                    className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-slate-950 border border-white/10 text-white text-xs font-mono placeholder:text-slate-500 focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={() => {
+                      soundFX.playClick();
+                      const stored = JSON.parse(localStorage.getItem("pinzulia_bookings") || "[]");
+                      setBookingList(stored.length > 0 ? stored : DEFAULT_BOOKINGS);
+                    }}
+                    className="btn-tactile px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer border border-white/10"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Recargar Reservas</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Bookings Table */}
+              <div className="bg-slate-900/90 rounded-2xl border border-white/10 overflow-hidden shadow-xl">
+                <div className="p-3 bg-slate-950 border-b border-white/10 flex items-center justify-between">
+                  <span className="text-xs font-black text-white uppercase italic font-sans flex items-center gap-2">
+                    <QrCode className="w-4 h-4 text-amber-300" />
+                    <span>Listado Oficial de Pases & Reservaciones QR</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-sky-300 font-bold">
+                    {filteredBookings.length} Registradas
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950/60 text-slate-400 font-bold uppercase text-[10px] border-b border-white/5 font-mono">
+                      <tr>
+                        <th className="p-3">Código QR</th>
+                        <th className="p-3">Titular</th>
+                        <th className="p-3">Servicio</th>
+                        <th className="p-3">Fecha & Turno</th>
+                        <th className="p-3">Jugadores & Zapatos</th>
+                        <th className="p-3">Total</th>
+                        <th className="p-3">Estado</th>
+                        <th className="p-3 text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 font-mono">
+                      {filteredBookings.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="p-8 text-center text-slate-500">
+                            No se encontraron reservaciones con ese filtro.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredBookings.map((b: any) => (
+                          <tr key={b.bookingCode} className="hover:bg-white/[0.02] transition-colors">
+                            <td className="p-3">
+                              <span className="font-bold text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30">
+                                #{b.bookingCode}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-white font-sans">{b.clientName}</div>
+                              <span className="text-[10px] text-slate-400">{b.clientPhone}</span>
+                            </td>
+                            <td className="p-3 text-sky-300 font-bold">
+                              {b.packageName || b.serviceType || "Pista Bowling"}
+                            </td>
+                            <td className="p-3">
+                              <div>{b.date}</div>
+                              <span className="text-[10px] text-emerald-400">{b.time}</span>
+                            </td>
+                            <td className="p-3">
+                              <div>{b.playersCount} Jugadores</div>
+                              <span className="text-[10px] text-slate-400">
+                                {b.shoesCount ? `${b.shoesCount} pares` : (b.shoeSizes?.length ? `${b.shoeSizes.length} pares` : "Sin calzado")}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-emerald-400">
+                                {formatUSD(b.totalUSD || 25)}
+                              </div>
+                              <span className="text-[10px] text-slate-500">
+                                ≈ {formatVES(b.totalUSD || 25, bcvRate)}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  b.status === "EN_PISTA"
+                                    ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                                    : b.status === "CONFIRMADA"
+                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                    : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                }`}
+                              >
+                                {b.status === "EN_PISTA"
+                                  ? "🎳 En Pista"
+                                  : b.status === "CONFIRMADA"
+                                  ? "✓ Confirmada"
+                                  : "⏳ Pendiente"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right">
+                              <button
+                                onClick={() => {
+                                  soundFX.playPinStrike();
+                                  handleCheckInBooking(b.bookingCode);
+                                }}
+                                className="btn-tactile px-2.5 py-1 rounded-lg bg-[#0033CC] hover:bg-[#00289E] text-white text-[11px] font-bold font-sans cursor-pointer shadow border border-white/20"
+                              >
+                                Check-In Pista
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
