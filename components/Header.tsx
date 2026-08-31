@@ -26,6 +26,8 @@ interface HeaderProps {
   glowMode: boolean;
   onToggleGlow: () => void;
   onOpenManager: () => void;
+  cartCount?: number;
+  onOpenCart?: () => void;
 }
 
 export function Header({
@@ -35,6 +37,8 @@ export function Header({
   glowMode,
   onToggleGlow,
   onOpenManager,
+  cartCount,
+  onOpenCart,
 }: HeaderProps) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
