@@ -1,3 +1,4 @@
+import { CurrencyMode } from "@/data/currencies";
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -50,6 +51,7 @@ export type BookingData = {
 };
 
 interface BookingSectionProps {
+  currency?: CurrencyMode;
   bcvRate: number;
   onBookingSuccess: (booking: BookingData) => void;
   preselectedPackageId?: string;
@@ -57,6 +59,7 @@ interface BookingSectionProps {
 }
 
 export function BookingSection({
+  currency = "USD",
   bcvRate,
   onBookingSuccess,
   preselectedPackageId,
