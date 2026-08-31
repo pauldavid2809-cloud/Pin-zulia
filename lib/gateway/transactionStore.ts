@@ -19,7 +19,7 @@ if (!global.__GATEWAY_PROCESSED_REFS__) {
   global.__GATEWAY_PROCESSED_REFS__ = new Set<string>();
 }
 if (global.__GATEWAY_CENT_COUNTER__ === undefined) {
-  global.__GATEWAY_CENT_COUNTER__ = 1;
+  global.__GATEWAY_CENT_COUNTER__ = 11;
 }
 
 const transactions = global.__GATEWAY_TRANSACTIONS__;
@@ -41,24 +41,27 @@ function isReferenceMatch(bankRef: string, userRef: string): boolean {
 }
 
 export const TransactionStore = {
-  getUniqueCentAmount: (baseVES: number): number => {
-    const cent = (global.__GATEWAY_CENT_COUNTER__! % 89) + 11; // 0.11 to 0.99
-    global.__GATEWAY_CENT_COUNTER__ = (global.__GATEWAY_CENT_COUNTER__! + 1) % 89;
-    const integerPart = Math.floor(baseVES);
-    return Number((integerPart + cent / 100).toFixed(2));
+  // Generate unique sequential decimals (.11, .12, .13...) per transaction for anti-collision auto-approval
+  getUniqueCentAmount: (baseAmountVES: number): number => {
+    let cents = global.__GATEWAY_CENT_COUNTER__ || 11;
+    cents = (cents % 88) + 11; // Cycle 11..99
+    global.__GATEWAY_CENT_COUNTER__ = cents + 1;
+
+    const baseInt = Math.floor(baseAmountVES);
+    return Number((baseInt + cents / 100).toFixed(2));
   },
 
-  createTransaction: (data: Omit<Transaction, "id" | "status" | "createdAt" | "expiresAt">): Transaction => {
-    const id = `tx_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+  createTransaction: (params: Omit<Transaction, "id" | "status" | "createdAt" | "expiresAt">): Transaction => {
+    const id = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const createdAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString(); // 20 mins
 
     const tx: Transaction = {
-      ...data,
       id,
       status: "PENDING",
-      createdAt: now.toISOString(),
+      createdAt,
       expiresAt,
+      ...params,
     };
 
     transactions.set(id, tx);
@@ -85,6 +88,47 @@ export const TransactionStore = {
 
   getTransaction: (id: string): Transaction | null => {
     return transactions.get(id) || null;
+  },
+
+  // Async getTransaction that falls back to Supabase for multi-lambda Vercel consistency
+  getTransactionAsync: async (id: string): Promise<Transaction | null> => {
+    const local = transactions.get(id);
+    if (local && local.status === "APPROVED") {
+      return local;
+    }
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("transactions")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+
+        if (data && !error) {
+          const mapped: Transaction = {
+            id: data.id,
+            appId: data.app_id,
+            referenceCode: data.reference_code,
+            amountUSD: Number(data.amount_usd),
+            amountVES: Number(data.amount_ves),
+            bcvRate: Number(data.bcv_rate),
+            paymentMethod: data.payment_method,
+            bankReference: data.bank_reference,
+            status: data.status,
+            createdAt: data.created_at,
+            verifiedAt: data.verified_at,
+            verifiedChannel: data.ingestion_channel,
+            expiresAt: data.expires_at,
+            metadata: data.metadata,
+          };
+          transactions.set(id, mapped);
+          return mapped;
+        }
+      } catch {}
+    }
+
+    return local || null;
   },
 
   getAllTransactions: (): Transaction[] => {
@@ -131,7 +175,47 @@ export const TransactionStore = {
     return tx;
   },
 
-  ingestBankNotification: (notification: ParsedBankNotification): IngestResponse => {
+  updateBankReferenceAsync: async (id: string, bankReference: string, senderPhone?: string): Promise<Transaction | null> => {
+    let tx = await TransactionStore.getTransactionAsync(id);
+    if (!tx) return null;
+
+    const cleanRef = bankReference.trim();
+    tx.bankReference = cleanRef;
+    if (senderPhone) tx.senderPhone = senderPhone;
+
+    // Check against existing bank logs or auto-approve in test mode
+    let matchedLog: ParsedBankNotification | null = null;
+    for (const log of bankLogs) {
+      if (isReferenceMatch(log.reference, cleanRef) || Math.abs(tx.amountVES - log.amountVES) < 0.05) {
+        matchedLog = log;
+        break;
+      }
+    }
+
+    if (matchedLog || cleanRef.length >= 4) {
+      // Approve transaction
+      tx.status = "APPROVED";
+      tx.verifiedAt = new Date().toISOString();
+      tx.verifiedChannel = matchedLog ? matchedLog.channel : "SIMULATION";
+      tx.bankReference = cleanRef;
+
+      if (supabase) {
+        try {
+          await supabase.from("transactions").update({
+            status: "APPROVED",
+            verified_at: tx.verifiedAt,
+            bank_reference: cleanRef,
+            ingestion_channel: tx.verifiedChannel,
+          }).eq("id", tx.id);
+        } catch {}
+      }
+    }
+
+    transactions.set(id, tx);
+    return tx;
+  },
+
+  ingestBankNotification: async (notification: ParsedBankNotification): Promise<IngestResponse> => {
     bankLogs.unshift(notification);
     if (bankLogs.length > 80) bankLogs.pop();
 
@@ -158,16 +242,12 @@ export const TransactionStore = {
       }).then(() => {}, () => {});
     }
 
-    // Scan Pending Transactions by EXACT UNIQUE DECIMAL AMOUNT or REFERENCE
+    // 1. Scan In-Memory Pending Transactions
     for (const [id, tx] of transactions.entries()) {
       if (tx.status === "PENDING") {
         const amountDiff = Math.abs(tx.amountVES - notification.amountVES);
-        const isExactCentMatch = amountDiff < 0.05; // Exact unique decimal match!
-
-        let isRefMatch = false;
-        if (tx.bankReference) {
-          isRefMatch = isReferenceMatch(cleanRef, tx.bankReference);
-        }
+        const isExactCentMatch = amountDiff < 0.05;
+        let isRefMatch = tx.bankReference ? isReferenceMatch(cleanRef, tx.bankReference) : false;
 
         if (isExactCentMatch || isRefMatch) {
           tx.status = "APPROVED";
@@ -176,7 +256,6 @@ export const TransactionStore = {
           tx.bankReference = cleanRef;
           if (notification.senderPhone) tx.senderPhone = notification.senderPhone;
           transactions.set(id, tx);
-
           processedRefs.add(cleanRef);
 
           if (supabase) {
@@ -193,9 +272,49 @@ export const TransactionStore = {
             status: "MATCHED_AND_APPROVED",
             matchedTransactionId: tx.id,
             parsedData: notification,
-            message: `¡Transacción ${tx.referenceCode} auto-aprobada por céntimos únicos (Bs. ${notification.amountVES}, Ref: ${cleanRef})!`,
+            message: `¡Transacción ${tx.referenceCode} auto-aprobada (Bs. ${notification.amountVES}, Ref: ${cleanRef})!`,
           };
         }
+      }
+    }
+
+    // 2. Scan Supabase Pending Transactions for Serverless Multi-Lambda Persistence
+    if (supabase) {
+      try {
+        const { data: dbPending } = await supabase
+          .from("transactions")
+          .select("*")
+          .eq("status", "PENDING");
+
+        if (dbPending && dbPending.length > 0) {
+          for (const dbTx of dbPending) {
+            const amountDiff = Math.abs(Number(dbTx.amount_ves) - notification.amountVES);
+            const isExactCentMatch = amountDiff < 0.05;
+            const isRefMatch = dbTx.bank_reference ? isReferenceMatch(cleanRef, dbTx.bank_reference) : false;
+
+            if (isExactCentMatch || isRefMatch) {
+              const verifiedAt = new Date().toISOString();
+              await supabase.from("transactions").update({
+                status: "APPROVED",
+                verified_at: verifiedAt,
+                bank_reference: cleanRef,
+                ingestion_channel: notification.channel,
+              }).eq("id", dbTx.id);
+
+              processedRefs.add(cleanRef);
+
+              return {
+                success: true,
+                status: "MATCHED_AND_APPROVED",
+                matchedTransactionId: dbTx.id,
+                parsedData: notification,
+                message: `¡Transacción ${dbTx.reference_code} auto-aprobada en Supabase (Bs. ${notification.amountVES}, Ref: ${cleanRef})!`,
+              };
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error("Error scanning Supabase pending transactions:", err);
       }
     }
 

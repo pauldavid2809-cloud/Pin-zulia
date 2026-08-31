@@ -7,7 +7,7 @@ interface Props {
 
 export async function GET(req: Request, { params }: Props) {
   const resolved = await params;
-  const tx = TransactionStore.getTransaction(resolved.id);
+  const tx = await TransactionStore.getTransactionAsync(resolved.id);
 
   if (!tx) {
     return NextResponse.json({ error: "Transacción no encontrada" }, { status: 404 });
@@ -26,14 +26,18 @@ export async function GET(req: Request, { params }: Props) {
 
 export async function POST(req: Request, { params }: Props) {
   const resolved = await params;
-  const body = await req.json();
+  let body: any = {};
+  try {
+    body = await req.json();
+  } catch {}
+
   const { bankReference, senderPhone } = body;
 
   if (!bankReference) {
     return NextResponse.json({ error: "Referencia requerida" }, { status: 400 });
   }
 
-  const tx = TransactionStore.updateBankReference(resolved.id, bankReference, senderPhone);
+  const tx = await TransactionStore.updateBankReferenceAsync(resolved.id, bankReference, senderPhone);
   if (!tx) {
     return NextResponse.json({ error: "Transacción no encontrada" }, { status: 404 });
   }

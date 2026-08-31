@@ -73,7 +73,7 @@ export async function POST(req: Request) {
     }
 
     // 5. Automated Reconciliation & Idempotency Store
-    const result = TransactionStore.ingestBankNotification(parsedNotification);
+    const result = await TransactionStore.ingestBankNotification(parsedNotification);
 
     return NextResponse.json({
       status: "success",
