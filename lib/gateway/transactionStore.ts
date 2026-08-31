@@ -1,4 +1,5 @@
 import { Transaction, ParsedBankNotification, IngestResponse } from "./types";
+import { supabase } from "@/lib/supabaseClient";
 
 declare global {
   var __GATEWAY_TRANSACTIONS__: Map<string, Transaction> | undefined;
@@ -39,10 +40,9 @@ function isReferenceMatch(bankRef: string, userRef: string): boolean {
 }
 
 export const TransactionStore = {
-  // Generates unique cents (0.01 to 0.99) for anti-collision auto-matching
   getUniqueCentAmount: (baseVES: number): number => {
-    const cent = (global.__GATEWAY_CENT_COUNTER__! % 90) + 10; // 0.10 to 0.99
-    global.__GATEWAY_CENT_COUNTER__ = (global.__GATEWAY_CENT_COUNTER__! + 1) % 90;
+    const cent = (global.__GATEWAY_CENT_COUNTER__! % 89) + 11; // 0.11 to 0.99
+    global.__GATEWAY_CENT_COUNTER__ = (global.__GATEWAY_CENT_COUNTER__! + 1) % 89;
     const integerPart = Math.floor(baseVES);
     return Number((integerPart + cent / 100).toFixed(2));
   },
@@ -61,6 +61,24 @@ export const TransactionStore = {
     };
 
     transactions.set(id, tx);
+
+    // Async persist to Supabase if configured
+    if (supabase) {
+      supabase.from("transactions").insert({
+        id: tx.id,
+        app_id: tx.appId,
+        reference_code: tx.referenceCode,
+        amount_usd: tx.amountUSD,
+        amount_ves: tx.amountVES,
+        bcv_rate: tx.bcvRate,
+        payment_method: tx.paymentMethod,
+        status: tx.status,
+        created_at: tx.createdAt,
+        expires_at: tx.expiresAt,
+        metadata: tx.metadata || {},
+      }).then(() => {}).catch(() => {});
+    }
+
     return tx;
   },
 
@@ -94,6 +112,15 @@ export const TransactionStore = {
           if (log.senderPhone) tx.senderPhone = log.senderPhone;
           transactions.set(id, tx);
           processedRefs.add(log.reference);
+
+          if (supabase) {
+            supabase.from("transactions").update({
+              status: "APPROVED",
+              verified_at: tx.verifiedAt,
+              bank_reference: log.reference,
+              ingestion_channel: log.channel,
+            }).eq("id", tx.id).then(() => {}).catch(() => {});
+          }
           break;
         }
       }
@@ -103,35 +130,44 @@ export const TransactionStore = {
     return tx;
   },
 
-  // Dynamic Decimal Reconciliation Engine
   ingestBankNotification: (notification: ParsedBankNotification): IngestResponse => {
     bankLogs.unshift(notification);
     if (bankLogs.length > 80) bankLogs.pop();
 
     const cleanRef = notification.reference.trim();
 
-    // 1. Idempotency Check
     if (processedRefs.has(cleanRef)) {
       return {
         success: true,
         status: "ALREADY_PROCESSED",
         parsedData: notification,
-        message: `Notificación duplicada [Canal: ${notification.channel}] recibida para referencia ya verificada (${cleanRef}). Descartada con éxito.`,
+        message: `Notificación duplicada [Canal: ${notification.channel}] para referencia (${cleanRef}).`,
       };
     }
 
-    // 2. Scan Pending Transactions by EXACT UNIQUE DECIMAL AMOUNT
+    // Persist notification to Supabase
+    if (supabase) {
+      supabase.from("bank_notifications").insert({
+        bank: notification.bank,
+        reference: cleanRef,
+        amount_ves: notification.amountVES,
+        channel: notification.channel,
+        raw_payload: notification.rawText || "",
+        is_processed: false,
+      }).then(() => {}).catch(() => {});
+    }
+
+    // Scan Pending Transactions by EXACT UNIQUE DECIMAL AMOUNT or REFERENCE
     for (const [id, tx] of transactions.entries()) {
       if (tx.status === "PENDING") {
         const amountDiff = Math.abs(tx.amountVES - notification.amountVES);
-        const isExactCentMatch = amountDiff < 0.05; // Exact decimal match!
+        const isExactCentMatch = amountDiff < 0.05; // Exact unique decimal match!
 
         let isRefMatch = false;
         if (tx.bankReference) {
           isRefMatch = isReferenceMatch(cleanRef, tx.bankReference);
         }
 
-        // Match if unique cents match OR reference matches!
         if (isExactCentMatch || isRefMatch) {
           tx.status = "APPROVED";
           tx.verifiedAt = new Date().toISOString();
@@ -141,6 +177,15 @@ export const TransactionStore = {
           transactions.set(id, tx);
 
           processedRefs.add(cleanRef);
+
+          if (supabase) {
+            supabase.from("transactions").update({
+              status: "APPROVED",
+              verified_at: tx.verifiedAt,
+              bank_reference: cleanRef,
+              ingestion_channel: notification.channel,
+            }).eq("id", tx.id).then(() => {}).catch(() => {});
+          }
 
           return {
             success: true,
@@ -157,7 +202,7 @@ export const TransactionStore = {
       success: true,
       status: "UNMATCHED_LOGGED",
       parsedData: notification,
-      message: `Pago [${notification.channel}] registrado en auditoría (Ref: ${cleanRef}, Bs. ${notification.amountVES}).`,
+      message: `Pago registrado en auditoría (Ref: ${cleanRef}, Bs. ${notification.amountVES}).`,
     };
   },
 
