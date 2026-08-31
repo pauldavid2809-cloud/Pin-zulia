@@ -1,34 +1,36 @@
 "use client";
 
-import React, { useState } from "react";
-import {
-  AVAILABLE_SHOE_SIZES,
-  OFFICIAL_RATES,
-} from "@/data/pinzuliaData";
-import { CurrencyMode } from "@/data/currencies";
-import { formatUSD, formatVES, generateBookingCode } from "@/lib/utils";
-import { soundFX } from "@/lib/soundEffects";
+import React, { useState, useEffect } from "react";
 import confetti from "canvas-confetti";
-import { AutoPaymentModal } from "@/components/AutoPaymentModal";
 import {
-  Sparkles,
+  OFFICIAL_RATES,
+  AVAILABLE_SHOE_SIZES,
+  PINZULIA_LANES,
+} from "@/data/pinzuliaData";
+import { formatUSD, formatVES } from "@/lib/utils";
+import { soundFX } from "@/lib/soundEffects";
+import {
   Calendar,
   Clock,
   Users,
   Footprints,
-  ShieldCheck,
+  Sparkles,
+  ShieldAlert,
   Zap,
-  QrCode,
   Phone,
   User,
-  Info,
+  QrCode,
+  CheckCircle2,
+  AlertCircle,
+  Lock,
 } from "lucide-react";
+import { AutoPaymentModal } from "@/components/AutoPaymentModal";
 
 export type BookingData = {
   bookingCode: string;
   packageId: string;
   packageName: string;
-  serviceType: "bowling" | "pool" | "combo";
+  serviceType: "bowling" | "pool";
   laneNumber?: number;
   date: string;
   time: string;
@@ -38,42 +40,51 @@ export type BookingData = {
   shoeSizes: string[];
   shoesCount: number;
   shoesTotalUSD: number;
+  wantsBumpers?: boolean;
   basePriceUSD: number;
   totalUSD: number;
-  totalVES: number;
   clientName: string;
   clientPhone: string;
-  notes: string;
-  wantsBumpers: boolean;
-  createdAt: string;
+  notes?: string;
   status: "PENDIENTE" | "CONFIRMADA" | "EN_PISTA";
 };
 
 interface BookingSectionProps {
-  currency: CurrencyMode;
   bcvRate: number;
-  preselectedLane?: number | null;
   onBookingSuccess: (booking: BookingData) => void;
+  preselectedPackageId?: string;
+  preselectedLane?: number;
 }
 
 export function BookingSection({
-  currency,
   bcvRate,
-  preselectedLane,
   onBookingSuccess,
+  preselectedPackageId,
+  preselectedLane,
 }: BookingSectionProps) {
-  const [serviceType, setServiceType] = useState<"bowling" | "pool">("bowling");
-  const [durationHours, setDurationHours] = useState<number>(1);
+  const [serviceType, setServiceType] = useState<"bowling" | "pool">(
+    preselectedPackageId?.includes("pool") ? "pool" : "bowling"
+  );
   const [selectedLane, setSelectedLane] = useState<number>(preselectedLane || 1);
   const [date, setDate] = useState<string>(() => {
-    const today = new Date();
-    return today.toISOString().split("T")[0];
+    return new Date().toISOString().split("T")[0];
   });
-  const [time, setTime] = useState<string>("07:00 PM");
+  const [time, setTime] = useState<string>("08:00 PM (Prime Time)");
+  const [durationHours, setDurationHours] = useState<number>(1);
   const [playersCount, setPlayersCount] = useState<number>(4);
+  const [playerNames, setPlayerNames] = useState<string[]>([
+    "Jugador 1",
+    "Jugador 2",
+    "Jugador 3",
+    "Jugador 4",
+  ]);
   const [includeShoes, setIncludeShoes] = useState<boolean>(true);
-  const [shoeSizes, setShoeSizes] = useState<string[]>(["40", "39", "41", "38"]);
-  const [playerNames, setPlayerNames] = useState<string[]>(["Jugador 1", "Jugador 2", "Jugador 3", "Jugador 4"]);
+  const [shoeSizes, setShoeSizes] = useState<string[]>([
+    "39 EU (6.5 US M / 8.0 US W)",
+    "40 EU (7.5 US M)",
+    "41 EU (8.5 US M)",
+    "42 EU (9.5 US M)",
+  ]);
   const [wantsBumpers, setWantsBumpers] = useState<boolean>(false);
   const [clientName, setClientName] = useState<string>("");
   const [clientPhone, setClientPhone] = useState<string>("");
@@ -83,10 +94,39 @@ export function BookingSection({
   const [showAutoPayment, setShowAutoPayment] = useState<boolean>(false);
   const [pendingBooking, setPendingBooking] = useState<BookingData | null>(null);
 
+  // Real-time occupied lanes for selected date & time
+  const [occupiedLanes, setOccupiedLanes] = useState<number[]>([]);
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState<boolean>(false);
+
+  // Fetch slot availability whenever date or time changes
+  useEffect(() => {
+    const fetchAvailability = async () => {
+      setIsLoadingAvailability(true);
+      try {
+        const res = await fetch(`/api/v1/bookings/availability?date=${date}&time=${encodeURIComponent(time)}`);
+        const data = await res.json();
+        if (data.allUnavailableLanes) {
+          setOccupiedLanes(data.allUnavailableLanes);
+
+          // If the currently selected lane is occupied, switch to the first free lane
+          if (data.allUnavailableLanes.includes(selectedLane)) {
+            const firstFree = Array.from({ length: 14 }, (_, i) => i + 1).find(
+              (n) => !data.allUnavailableLanes.includes(n)
+            );
+            if (firstFree) setSelectedLane(firstFree);
+          }
+        }
+      } catch {}
+      setIsLoadingAvailability(false);
+    };
+
+    fetchAvailability();
+  }, [date, time]);
+
   // Price Calculations
   const ratePerHour = serviceType === "bowling" ? OFFICIAL_RATES.bowlingHourUSD : OFFICIAL_RATES.poolHourUSD;
   const baseServiceUSD = ratePerHour * durationHours;
-  const shoesCount = includeShoes ? playersCount : 0;
+  const shoesCount = includeShoes && serviceType === "bowling" ? playersCount : 0;
   const shoesTotalUSD = shoesCount * OFFICIAL_RATES.shoeRentalUSD;
   const totalUSD = baseServiceUSD + shoesTotalUSD;
   const totalVES = totalUSD * bcvRate;
@@ -109,9 +149,21 @@ export function BookingSection({
     setShoeSizes(updated);
   };
 
-  const handleStartBooking = (payOnline: boolean) => {
+  const generateBookingCode = () => {
+    const randomDigits = Math.floor(1000 + Math.random() * 9000);
+    return `PIN-${randomDigits}`;
+  };
+
+  const handleStartPayment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+
     if (!clientName.trim() || !clientPhone.trim()) {
-      alert("Por favor ingresa tu nombre y número de WhatsApp para emitir tu Pase Digital.");
+      alert("Por favor ingresa tu nombre y número de WhatsApp para confirmar tu reserva.");
+      return;
+    }
+
+    if (serviceType === "bowling" && occupiedLanes.includes(selectedLane)) {
+      alert(`La Pista ${selectedLane} ya se encuentra ocupada para ese turno. Por favor selecciona otra pista disponible.`);
       return;
     }
 
@@ -133,35 +185,70 @@ export function BookingSection({
       durationHours,
       playersCount,
       playerNames: playerNames.slice(0, playersCount),
-      shoeSizes: includeShoes ? shoeSizes.slice(0, playersCount) : [],
+      shoeSizes: includeShoes && serviceType === "bowling" ? shoeSizes.slice(0, playersCount) : [],
       shoesCount,
       shoesTotalUSD,
+      wantsBumpers: serviceType === "bowling" ? wantsBumpers : false,
       basePriceUSD: baseServiceUSD,
       totalUSD,
-      totalVES,
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
-      notes: wantsBumpers ? `Bumpers solicitados. ${notes}` : notes,
-      wantsBumpers,
-      createdAt: new Date().toISOString(),
+      notes: notes.trim(),
       status: "PENDIENTE",
     };
 
-    if (payOnline) {
-      setPendingBooking(booking);
-      setShowAutoPayment(true);
-    } else {
-      finalizeBooking(booking);
-    }
+    // Register 10-minute hold in API
+    try {
+      await fetch("/api/v1/bookings/availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date,
+          time,
+          laneNumber: selectedLane,
+          bookingCode,
+          clientName: clientName.trim(),
+          clientPhone: clientPhone.trim(),
+          status: "HOLD",
+          serviceType,
+          totalUSD,
+        }),
+      });
+      // Add to local occupied list
+      setOccupiedLanes((prev) => Array.from(new Set([...prev, selectedLane])));
+    } catch {}
+
+    setPendingBooking(booking);
+    setShowAutoPayment(true);
   };
 
-  const handlePaymentApproved = (txId: string, bankRef: string) => {
+  const handlePaymentApproved = async (txId: string, bankRef: string) => {
     if (!pendingBooking) return;
     const confirmed: BookingData = {
       ...pendingBooking,
       status: "CONFIRMADA",
       notes: `${pendingBooking.notes || ""} [Pago Aprobado ByteBridge Ref: ${bankRef}]`.trim(),
     };
+
+    // Confirm booking in API
+    try {
+      await fetch("/api/v1/bookings/availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: confirmed.date,
+          time: confirmed.time,
+          laneNumber: confirmed.laneNumber,
+          bookingCode: confirmed.bookingCode,
+          clientName: confirmed.clientName,
+          clientPhone: confirmed.clientPhone,
+          status: "CONFIRMADA",
+          serviceType: confirmed.serviceType,
+          totalUSD: confirmed.totalUSD,
+        }),
+      });
+    } catch {}
+
     setShowAutoPayment(false);
     finalizeBooking(confirmed);
   };
@@ -176,30 +263,34 @@ export function BookingSection({
       });
     } catch {}
 
-    // Save to local storage cache for persistence
+    // Save to local storage cache
     try {
       const existing = JSON.parse(localStorage.getItem("pinzulia_bookings") || "[]");
       existing.unshift(booking);
       localStorage.setItem("pinzulia_bookings", JSON.stringify(existing.slice(0, 30)));
     } catch {}
 
-    // Background automated dispatch via WhatsApp Bot (Parrandón Engine)
+    // Background automated dispatch via WhatsApp Bot
     const shoesText = includeShoes && shoeSizes.length > 0
       ? `${shoeSizes.length} pares (${shoeSizes.join(", ")})`
       : "Sin calzado";
 
+    const laneText = booking.laneNumber
+      ? `Pista ${booking.laneNumber.toString().padStart(2, "0")} ${booking.laneNumber >= 13 ? "(Lounge VIP)" : "(Brunswick Computarizada)"}`
+      : "Mesa de Pool Diamond";
+
     const autoMessage = `🎳 *PinZulia Bowling Boutique & Gastropub (1963)*\n\n` +
-      `¡Hola * ${booking.clientName}*! Tu reservación ${booking.status === "CONFIRMADA" ? "ha sido PAGADA y CONFIRMADA" : "ha sido generada"} exitosamente.\n\n` +
+      `¡Hola * ${booking.clientName}*! Tu reservación para *${laneText}* ha sido *PAGADA y CONFIRMADA* exitosamente.\n\n` +
       `🎟️ *Pase Digital:* #${booking.bookingCode}\n` +
       `🎯 *Servicio:* ${booking.packageName}\n` +
       `📅 *Fecha:* ${booking.date} a las ${booking.time}\n` +
       `👥 *Jugadores:* ${booking.playersCount} Personas\n` +
       `👟 *Calzado Sanitizado:* ${shoesText}\n` +
       (booking.wantsBumpers ? `🛡️ *Bumpers:* Activados para niños\n` : "") +
-      `💵 *Total:` + (booking.status === "CONFIRMADA" ? " PAGADO" : " Estimado") + `:* $${booking.totalUSD.toFixed(2)} USD\n\n` +
+      `💵 *Total Pagado:* $${booking.totalUSD.toFixed(2)} USD\n\n` +
       `👉 *Abre tu Pase VIP con Código QR aquí:*\nhttps://pin-zulia.vercel.app/ticket/${booking.bookingCode}\n\n` +
       `📍 *Ubicación:* C.C. Internacional, Av. 5 de Julio, Maracaibo.\n` +
-      `_Presenta este boleto digital en la recepción para ingresar a tu pista._`;
+      `_Presenta este boleto digital en la recepción para ingresar directo a tu pista._`;
 
     fetch("/api/whatsapp/send", {
       method: "POST",
@@ -214,7 +305,6 @@ export function BookingSection({
   };
 
   const timeSlots = [
-    "02:00 PM (Sáb/Dom)",
     "03:30 PM",
     "05:00 PM (Apertura)",
     "06:30 PM",
@@ -237,17 +327,17 @@ export function BookingSection({
               <QrCode className="w-3.5 h-3.5" />
               <span>RESERVA TU EXPERIENCIA BOUTIQUE ONLINE</span>
             </div>
-            <h2 className="text-3xl sm:text-5xl font-black text-white uppercase italic tracking-tight retro-3d-text-blue">
+            <h2 className="text-3xl sm:text-5xl font-black text-white uppercase italic tracking-tight retro-3d-text-blue font-sans">
               ELIGE TU SERVICIO & PASE VIP
             </h2>
             <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto">
-              Emite tu boleto digital con código QR al instante o paga con Pago Móvil automatizado (ByteBridge).
+              Selecciona tu pista en vivo, confirma tu horario y paga con Pago Móvil automatizado en menos de 3 segundos.
             </p>
           </div>
 
           {/* Main Card Container */}
           <div className="bg-[#070f1e]/95 border-2 border-white/15 rounded-3xl p-6 sm:p-10 shadow-2xl backdrop-blur-md">
-            <form onSubmit={(e) => { e.preventDefault(); handleStartBooking(false); }} className="space-y-8">
+            <form onSubmit={handleStartPayment} className="space-y-8">
               {/* STEP 1: SERVICE TYPE */}
               <div className="space-y-3">
                 <label className="text-xs font-black text-sky-400 uppercase font-mono tracking-wider flex items-center gap-2">
@@ -311,21 +401,33 @@ export function BookingSection({
                   </button>
                 </div>
 
-                {/* Visual 14-Lanes Picker for Bowling */}
+                {/* 14-Lanes Availability Grid for Bowling */}
                 {serviceType === "bowling" && (
-                  <div className="pt-2 space-y-2 bg-slate-950/70 p-4 rounded-2xl border border-white/10">
-                    <div className="flex items-center justify-between">
+                  <div className="pt-2 space-y-2.5 bg-slate-950/80 p-4 rounded-2xl border border-white/10">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                       <span className="text-xs font-mono font-bold text-slate-300 flex items-center gap-1.5">
                         <span>🎯</span>
-                        <span>Selecciona tu Pista Brunswick™ (1 a 14):</span>
+                        <span>Disponibilidad en Vivo de las 14 Pistas:</span>
                       </span>
-                      <span className="text-[11px] font-mono text-sky-400 font-bold">
-                        Pista {selectedLane.toString().padStart(2, "0")} Seleccionada {selectedLane >= 13 ? "🌟 VIP" : ""}
-                      </span>
+                      <div className="flex items-center gap-3 text-[10px] font-mono">
+                        <span className="flex items-center gap-1 text-emerald-400">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                          <span>Libre</span>
+                        </span>
+                        <span className="flex items-center gap-1 text-red-400">
+                          <span className="w-2 h-2 rounded-full bg-red-500" />
+                          <span>Ocupada</span>
+                        </span>
+                        <span className="flex items-center gap-1 text-amber-300">
+                          <span className="w-2 h-2 rounded-full bg-amber-400" />
+                          <span>Lounge VIP (13-14)</span>
+                        </span>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-7 sm:grid-cols-14 gap-1.5 font-mono">
                       {Array.from({ length: 14 }, (_, i) => i + 1).map((num) => {
+                        const isOccupied = occupiedLanes.includes(num);
                         const isSelected = selectedLane === num;
                         const isVip = num >= 13;
 
@@ -333,23 +435,37 @@ export function BookingSection({
                           <button
                             key={num}
                             type="button"
+                            disabled={isOccupied}
                             onClick={() => {
-                              soundFX.playClick();
-                              setSelectedLane(num);
+                              if (!isOccupied) {
+                                soundFX.playClick();
+                                setSelectedLane(num);
+                              }
                             }}
-                            className={`btn-tactile py-2 rounded-xl text-xs font-black transition-all flex flex-col items-center justify-center cursor-pointer border ${
-                              isSelected
+                            className={`btn-tactile py-2 rounded-xl text-xs font-black transition-all flex flex-col items-center justify-center border relative ${
+                              isOccupied
+                                ? "bg-red-950/40 text-red-400/60 border-red-500/20 cursor-not-allowed opacity-50"
+                                : isSelected
                                 ? isVip
                                   ? "bg-gradient-to-b from-amber-500 to-yellow-600 text-black border-yellow-300 shadow-lg shadow-amber-500/30 scale-105"
                                   : "bg-[#0033CC] text-white border-sky-400 shadow-lg shadow-blue-600/30 scale-105"
                                 : isVip
-                                ? "bg-amber-950/40 text-amber-300 border-amber-500/30 hover:border-amber-400"
-                                : "bg-slate-900 text-slate-300 border-white/10 hover:border-white/20 hover:text-white"
+                                ? "bg-amber-950/40 text-amber-300 border-amber-500/30 hover:border-amber-400 cursor-pointer"
+                                : "bg-slate-900 text-slate-300 border-white/10 hover:border-white/20 hover:text-white cursor-pointer"
                             }`}
-                            title={isVip ? `Pista ${num} (Lounge VIP Neón)` : `Pista ${num} (Brunswick Estándar)`}
+                            title={
+                              isOccupied
+                                ? `Pista ${num} (Ocupada en este turno)`
+                                : isVip
+                                ? `Pista ${num} (Lounge VIP Neón Disponible)`
+                                : `Pista ${num} (Brunswick Disponible)`
+                            }
                           >
+                            {isOccupied && <Lock className="w-2.5 h-2.5 absolute top-1 right-1 text-red-400" />}
                             <span>{num.toString().padStart(2, "0")}</span>
-                            {isVip && <span className="text-[7px] font-sans font-bold uppercase tracking-tighter">VIP</span>}
+                            {isVip && !isOccupied && (
+                              <span className="text-[7px] font-sans font-bold uppercase tracking-tighter">VIP</span>
+                            )}
                           </button>
                         );
                       })}
@@ -365,60 +481,61 @@ export function BookingSection({
                   <span>Fecha, Turno Oficial & Duración:</span>
                 </label>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
-                    <span className="text-xs text-slate-400 flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-[#ED1C24]" />
-                      <span>Fecha:</span>
+                    <span className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Fecha de la Reserva:</span>
                     </span>
                     <input
                       type="date"
                       value={date}
+                      min={new Date().toISOString().split("T")[0]}
                       onChange={(e) => setDate(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/20 text-white text-xs focus:outline-none focus:border-sky-400"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/20 text-white font-mono text-sm focus:outline-none focus:border-sky-400"
                       required
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                    <span className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Turno de Apertura:</span>
+                      <span>Turno Oficial:</span>
                     </span>
                     <select
                       value={time}
                       onChange={(e) => setTime(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/20 text-white text-xs focus:outline-none focus:border-sky-400"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/20 text-white font-mono text-xs sm:text-sm focus:outline-none focus:border-sky-400"
                     >
-                      {timeSlots.map((ts) => (
-                        <option key={ts} value={ts}>
-                          {ts}
+                      {timeSlots.map((slot) => (
+                        <option key={slot} value={slot}>
+                          {slot}
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div className="space-y-1.5">
-                    <span className="text-xs text-slate-400 flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-sky-400" />
+                    <span className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                       <span>Horas de Juego:</span>
                     </span>
-                    <div className="flex gap-2">
-                      {[1, 2, 3].map((hr) => (
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[1, 2, 3].map((hrs) => (
                         <button
-                          key={hr}
+                          key={hrs}
                           type="button"
                           onClick={() => {
                             soundFX.playClick();
-                            setDurationHours(hr);
+                            setDurationHours(hrs);
                           }}
-                          className={`btn-tactile flex-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                            durationHours === hr
-                              ? "bg-[#0033CC] text-white border-sky-400"
+                          className={`btn-tactile py-2 rounded-xl text-xs font-bold font-mono transition-all border cursor-pointer ${
+                            durationHours === hrs
+                              ? "bg-[#0033CC] text-white border-sky-400 shadow-md shadow-blue-600/30"
                               : "bg-slate-950 text-slate-400 border-white/10 hover:text-white"
                           }`}
                         >
-                          {hr}h
+                          {hrs} {hrs === 1 ? "Hora" : "Horas"}
                         </button>
                       ))}
                     </div>
@@ -426,77 +543,87 @@ export function BookingSection({
                 </div>
               </div>
 
-              {/* STEP 3: PLAYERS & SANITIZED SHOES */}
-              <div className="space-y-3 pt-2 border-t border-white/10">
-                <label className="text-xs font-black text-sky-400 uppercase font-mono tracking-wider flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-[#0033CC] text-white flex items-center justify-center text-[10px]">3</span>
-                  <span>Jugadores y Calzado Sanitizado ($2,5 c/u):</span>
-                </label>
+              {/* STEP 3: PLAYERS & SHOE SIZES */}
+              <div className="space-y-4 pt-2 border-t border-white/10">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-sky-400 uppercase font-mono tracking-wider flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-[#0033CC] text-white flex items-center justify-center text-[10px]">3</span>
+                    <span>Jugadores & Calzado Sanitizado:</span>
+                  </label>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5 font-mono">
-                    <span className="text-xs text-slate-400 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-sky-400" />
-                      <span>Número de Jugadores:</span>
+                  <span className="text-xs font-mono text-slate-400">
+                    {serviceType === "bowling" ? "Máx 5 por pista" : "Máx 4 por mesa"}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between bg-slate-950 p-3 rounded-2xl border border-white/10">
+                    <span className="text-xs text-slate-300 font-mono flex items-center gap-2">
+                      <Users className="w-4 h-4 text-sky-400" />
+                      <span>Número de Jugadores en tu Grupo:</span>
                     </span>
-                    <div className="flex gap-2">
-                      {Array.from({ length: serviceType === "bowling" ? 5 : 4 }, (_, i) => i + 1).map((num) => (
-                        <button
-                          key={num}
-                          type="button"
-                          onClick={() => {
-                            soundFX.playClick();
-                            handlePlayersChange(num);
-                          }}
-                          className={`btn-tactile flex-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                            playersCount === num
-                              ? "bg-[#0033CC] text-white border-sky-400"
-                              : "bg-slate-950 text-slate-400 border-white/10 hover:text-white"
-                          }`}
-                        >
-                          {num}
-                        </button>
-                      ))}
+
+                    <div className="flex items-center gap-2">
+                      {[1, 2, 3, 4, 5]
+                        .filter((n) => (serviceType === "pool" ? n <= 4 : true))
+                        .map((num) => (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => {
+                              soundFX.playClick();
+                              handlePlayersChange(num);
+                            }}
+                            className={`btn-tactile w-8 h-8 rounded-xl font-mono font-bold text-xs flex items-center justify-center transition-all border cursor-pointer ${
+                              playersCount === num
+                                ? "bg-[#0033CC] text-white border-sky-400 shadow-md"
+                                : "bg-slate-900 text-slate-400 border-white/10 hover:text-white"
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        ))}
                     </div>
                   </div>
 
+                  {/* Shoe Rental Toggle for Bowling */}
                   {serviceType === "bowling" && (
-                    <div className="space-y-1.5">
-                      <span className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
-                        <Footprints className="w-3.5 h-3.5 text-[#ED1C24]" />
-                        <span>Alquiler de Calzado UV:</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          soundFX.playClick();
-                          setIncludeShoes(!includeShoes);
-                        }}
-                        className={`btn-tactile w-full py-2 px-3 rounded-xl border text-xs font-mono font-bold flex items-center justify-between cursor-pointer transition-all ${
-                          includeShoes
-                            ? "bg-emerald-950/60 text-emerald-300 border-emerald-500/40"
-                            : "bg-slate-950 text-slate-400 border-white/10"
-                        }`}
-                      >
-                        <span>{includeShoes ? "✓ Incluir Calzado para Todos" : "✗ Sin Alquiler de Calzado"}</span>
-                        <span className="font-black">
-                          {includeShoes ? `+$${shoesTotalUSD.toFixed(2)}` : "$0.00"}
-                        </span>
-                      </button>
+                    <div className="p-3 bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Footprints className="w-4 h-4 text-amber-300" />
+                        <div>
+                          <div className="text-xs font-bold text-white">
+                            Alquiler de Calzado Sanitizado UV ($2.50 c/u)
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            Requerido para el cuidado del carril de madera
+                          </span>
+                        </div>
+                      </div>
+
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={includeShoes}
+                          onChange={(e) => setIncludeShoes(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                      </label>
                     </div>
                   )}
                 </div>
 
-                {/* Shoe Sizes Selector */}
+                {/* Dynamic Shoe Sizes Selectors */}
                 {serviceType === "bowling" && includeShoes && (
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-2 bg-slate-950/60 p-3 rounded-2xl border border-white/10">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
                     {Array.from({ length: playersCount }).map((_, idx) => (
-                      <div key={idx} className="space-y-1">
-                        <span className="text-[10px] text-slate-400 font-mono block">
-                          Jugador {idx + 1}
+                      <div key={idx} className="bg-slate-950 p-2.5 rounded-xl border border-white/10 space-y-1">
+                        <span className="text-[11px] font-mono text-slate-400 block">
+                          Talla Jugador {idx + 1}:
                         </span>
                         <select
-                          value={shoeSizes[idx] || "40"}
+                          value={shoeSizes[idx] || AVAILABLE_SHOE_SIZES[3]}
                           onChange={(e) => handleShoeChange(idx, e.target.value)}
                           className="w-full px-2 py-1.5 rounded-lg bg-slate-900 border border-white/20 text-white font-mono text-xs focus:outline-none"
                         >
@@ -567,11 +694,11 @@ export function BookingSection({
                 </div>
               </div>
 
-              {/* ESTIMATE TOTAL BREAKDOWN */}
+              {/* ESTIMATE TOTAL BREAKDOWN & SINGLE CHECKOUT ACTION */}
               <div className="p-5 rounded-2xl bg-slate-950 border-2 border-sky-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono">
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                    Total Estimado de la Experiencia
+                    Total Oficial de la Experiencia
                   </span>
                   <div className="flex items-baseline gap-2">
                     <span className="text-3xl font-black text-white">{formatUSD(totalUSD)}</span>
@@ -584,41 +711,28 @@ export function BookingSection({
                   </span>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-2.5 w-full sm:w-auto">
-                  {/* Primary: Automated ByteBridge Payment */}
-                  <button
-                    type="button"
-                    onClick={() => handleStartBooking(true)}
-                    className="btn-tactile px-5 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-xs uppercase italic tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-900/40 border border-emerald-300/30 font-sans"
-                  >
-                    <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                    <span>Pago Móvil Auto (ByteBridge)</span>
-                  </button>
-
-                  {/* Secondary: Instant Digital Pass */}
-                  <button
-                    type="button"
-                    onClick={() => handleStartBooking(false)}
-                    className="btn-tactile px-5 py-3 rounded-xl bg-[#ED1C24] hover:bg-[#D8001D] text-white font-black text-xs uppercase italic tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-red-600/30 border border-white/20 font-sans"
-                  >
-                    <QrCode className="w-4 h-4 text-amber-300" />
-                    <span>Pase Digital QR</span>
-                  </button>
-                </div>
+                {/* SINGLE PRIMARY CHECKOUT BUTTON */}
+                <button
+                  type="submit"
+                  className="btn-tactile w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-600 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-sm uppercase italic tracking-wider flex items-center justify-center gap-2.5 cursor-pointer shadow-xl shadow-emerald-950/50 border border-emerald-300/40 font-sans"
+                >
+                  <Zap className="w-5 h-5 text-amber-300 fill-amber-300" />
+                  <span>Pagar Reserva con Pago Móvil Auto</span>
+                </button>
               </div>
             </form>
           </div>
         </div>
       </section>
 
-      {/* ByteBridge Automated Payment Modal */}
+      {/* BYTEBRIDGE AUTOMATED PAYMENT MODAL */}
       {showAutoPayment && pendingBooking && (
         <AutoPaymentModal
           isOpen={showAutoPayment}
           onClose={() => setShowAutoPayment(false)}
           amountUSD={pendingBooking.totalUSD}
-          bcvRate={bcvRate}
           referenceCode={pendingBooking.bookingCode}
+          bcvRate={bcvRate}
           onPaymentApproved={handlePaymentApproved}
         />
       )}
