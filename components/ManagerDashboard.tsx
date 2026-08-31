@@ -1,3 +1,5 @@
+"use client";
+
 const DEFAULT_BOOKINGS = [
   {
     bookingCode: "PIN-7401",
@@ -40,7 +42,6 @@ const DEFAULT_BOOKINGS = [
   },
 ];
 
-"use client";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
