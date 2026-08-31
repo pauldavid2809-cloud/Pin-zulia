@@ -14,9 +14,7 @@ import {
   ShieldCheck,
   X,
   Play,
-  Pause,
   RotateCcw,
-  Sparkles,
   Plus,
   Send,
   Zap,
@@ -29,6 +27,15 @@ import {
   MessageSquare,
   QrCode,
   Search,
+  ArrowLeft,
+  ExternalLink,
+  Users,
+  Footprints,
+  Clock,
+  TrendingUp,
+  Activity,
+  Layers,
+  DollarSign,
 } from "lucide-react";
 import { ByteBridgeSettings } from "@/components/ByteBridgeSettings";
 import { WhatsAppBotManager } from "@/components/WhatsAppBotManager";
@@ -42,6 +49,7 @@ const DEFAULT_BOOKINGS = [
     clientPhone: "0414 1234567",
     packageName: "Pista de Bowling (1h)",
     serviceType: "bowling",
+    laneNumber: 7,
     date: new Date().toISOString().split("T")[0],
     time: "07:00 PM",
     playersCount: 5,
@@ -64,6 +72,8 @@ const DEFAULT_BOOKINGS = [
   },
 ];
 
+type AdminTab = "pistas" | "reservas" | "whatsapp" | "bytebridge" | "pasarela" | "tasa";
+
 interface ManagerDashboardProps {
   isOpen: boolean;
   onClose: () => void;
@@ -80,6 +90,11 @@ export function ManagerDashboard({
   const [lanes, setLanes] = useState<BowlingLane[]>(PINZULIA_LANES);
   const [tempRate, setTempRate] = useState<string>(bcvRate.toFixed(2));
   const [rateSaved, setRateSaved] = useState<boolean>(false);
+  const [isSyncingDolarApi, setIsSyncingDolarApi] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<AdminTab>("pistas");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<string>("ALL");
+
   const [bookingList, setBookingList] = useState<any[]>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("pinzulia_bookings");
@@ -89,44 +104,19 @@ export function ManagerDashboard({
     }
     return DEFAULT_BOOKINGS;
   });
-  const [searchQuery, setSearchQuery] = useState<string>("");
-
-  const handleCheckInBooking = (code: string) => {
-    setBookingList((prev) =>
-      prev.map((b) =>
-        b.bookingCode === code ? { ...b, status: "EN_PISTA" } : b
-      )
-    );
-    try {
-      const stored = JSON.parse(localStorage.getItem("pinzulia_bookings") || "[]");
-      const updated = stored.map((b: any) =>
-        b.bookingCode === code ? { ...b, status: "EN_PISTA" } : b
-      );
-      localStorage.setItem("pinzulia_bookings", JSON.stringify(updated));
-    } catch {}
-  };
-
-  const filteredBookings = bookingList.filter((b) => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      (b.bookingCode && b.bookingCode.toLowerCase().includes(q)) ||
-      (b.clientName && b.clientName.toLowerCase().includes(q)) ||
-      (b.clientPhone && b.clientPhone.includes(q))
-    );
-  });
-
-  const [activeTab, setActiveTab] = useState<"pistas" | "reservas" | "bytebridge" | "pasarela" | "whatsapp" | "tasa">("pistas");
-  const [isSyncingDolarApi, setIsSyncingDolarApi] = useState<boolean>(false);
 
   // Gateway Live Feed
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [bankLogs, setBankLogs] = useState<ParsedBankNotification[]>([]);
   const [simBank, setSimBank] = useState<string>("Banesco");
-  const [simChannel, setSimChannel] = useState<IngestionChannel>("EMAIL");
-  const [simAmount, setSimAmount] = useState<string>("19791.75");
+  const [simChannel, setSimChannel] = useState<IngestionChannel>("PUSH");
+  const [simAmount, setSimAmount] = useState<string>("1.15");
   const [simRef, setSimRef] = useState<string>("849201");
   const [simResult, setSimResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTempRate(bcvRate.toFixed(2));
+  }, [bcvRate]);
 
   useEffect(() => {
     if (activeTab === "pasarela") {
@@ -166,6 +156,20 @@ export function ManagerDashboard({
     );
   };
 
+  const handleCheckInBooking = (code: string) => {
+    soundFX.playPinStrike();
+    setBookingList((prev) =>
+      prev.map((b) => (b.bookingCode === code ? { ...b, status: "EN_PISTA" } : b))
+    );
+    try {
+      const stored = JSON.parse(localStorage.getItem("pinzulia_bookings") || "[]");
+      const updated = stored.map((b: any) =>
+        b.bookingCode === code ? { ...b, status: "EN_PISTA" } : b
+      );
+      localStorage.setItem("pinzulia_bookings", JSON.stringify(updated));
+    } catch {}
+  };
+
   const handleSaveRate = (e: React.FormEvent) => {
     e.preventDefault();
     soundFX.playClick();
@@ -202,7 +206,7 @@ export function ManagerDashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bank: simBank,
-          amountVES: parseFloat(simAmount) || 19791.75,
+          amountVES: parseFloat(simAmount) || 1.15,
           reference: simRef.trim() || "849201",
           channel: simChannel,
         }),
@@ -219,28 +223,54 @@ export function ManagerDashboard({
 
   const activeCount = lanes.filter((l) => l.status === "en_juego").length;
   const reservedCount = lanes.filter((l) => l.status === "reservada").length;
-  const occupancy = Math.round((activeCount / lanes.length) * 100);
+  const occupancyPct = Math.round((activeCount / lanes.length) * 100);
+
+  const filteredBookings = bookingList.filter((b) => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchQuery =
+      !q ||
+      (b.bookingCode && b.bookingCode.toLowerCase().includes(q)) ||
+      (b.clientName && b.clientName.toLowerCase().includes(q)) ||
+      (b.clientPhone && b.clientPhone.includes(q));
+
+    const matchStatus =
+      filterStatus === "ALL" ||
+      (filterStatus === "EN_PISTA" && b.status === "EN_PISTA") ||
+      (filterStatus === "CONFIRMADA" && b.status === "CONFIRMADA") ||
+      (filterStatus === "PENDIENTE" && b.status !== "CONFIRMADA" && b.status !== "EN_PISTA");
+
+    return matchQuery && matchStatus;
+  });
+
+  const tabItems: { id: AdminTab; label: string; icon: any; count?: number; badgeColor?: string }[] = [
+    { id: "pistas", label: "14 Pistas", icon: Layers, count: activeCount, badgeColor: "bg-sky-500/20 text-sky-300 border-sky-500/30" },
+    { id: "reservas", label: "Pases QR", icon: QrCode, count: filteredBookings.length, badgeColor: "bg-amber-500/20 text-amber-300 border-amber-500/30" },
+    { id: "whatsapp", label: "Bot WhatsApp", icon: MessageSquare },
+    { id: "bytebridge", label: "ByteBridge", icon: Smartphone },
+    { id: "pasarela", label: "Pasarela Live", icon: Zap },
+    { id: "tasa", label: "Tasa BCV", icon: DollarSign },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-      <div className="bg-[#070f1e] border-2 border-white/20 rounded-3xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-xl animate-in fade-in">
+      <div className="bg-[#070e1e] border-2 border-white/15 rounded-3xl w-full max-w-6xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden text-slate-100">
         {/* Top Header */}
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-white/10 bg-slate-950/80">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10 bg-slate-950/80">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white font-black shadow-lg shadow-emerald-600/30">
+            <div className="w-10 h-10 rounded-2xl bg-[#0033CC] flex items-center justify-center text-white font-black shadow-lg shadow-blue-600/30 border border-white/20">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-black text-white uppercase italic tracking-tight font-sans">
-                  Consola Gerencial & Recepción PinZulia
+                  Consola Gerencial <span className="text-sky-400">PinZulia</span>
                 </h2>
                 <span className="px-2 py-0.5 rounded-full bg-[#0033CC] text-white text-[9px] font-mono font-bold">
                   PROD 1963
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
-                14 Pistas • ByteBridge Pago Móvil • Bot WhatsApp Entradas • DolarAPI
+              <p className="text-xs text-slate-400 font-mono hidden sm:block">
+                14 Carriles • ByteBridge Pago Móvil • Bot WhatsApp Entradas • DolarAPI
               </p>
             </div>
           </div>
@@ -250,10 +280,10 @@ export function ManagerDashboard({
               href="/pistas-qr"
               target="_blank"
               onClick={() => soundFX.playClick()}
-              className="btn-tactile hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-500/30 text-xs font-bold font-mono"
+              className="btn-tactile hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-sky-300 border border-sky-500/30 text-xs font-bold font-mono"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Imprimir Stands QR</span>
+              <span>Stands QR</span>
             </Link>
 
             <button
@@ -261,7 +291,7 @@ export function ManagerDashboard({
                 soundFX.playClick();
                 onClose();
               }}
-              className="btn-tactile p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 cursor-pointer"
+              className="btn-tactile p-2 rounded-xl text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 border border-white/10 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -269,24 +299,24 @@ export function ManagerDashboard({
         </div>
 
         {/* Real-time KPIs Banner */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 sm:p-5 bg-slate-950/80 border-b border-white/5 font-mono">
-          <div className="bg-slate-900/90 p-3.5 rounded-2xl border border-sky-500/20">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 p-3.5 sm:p-4 bg-slate-950/80 border-b border-white/5 font-mono">
+          <div className="bg-slate-900/90 p-3 rounded-2xl border border-sky-500/20">
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
               Pistas en Juego
             </span>
-            <div className="text-2xl font-black text-sky-400 pt-0.5">
+            <div className="text-xl sm:text-2xl font-black text-sky-400 pt-0.5">
               {activeCount} / {lanes.length}
             </div>
             <span className="text-[10px] text-slate-500">
-              {occupancy}% aforo • {reservedCount} reservadas
+              {occupancyPct}% aforo • {reservedCount} reservadas
             </span>
           </div>
 
-          <div className="bg-slate-900/90 p-3.5 rounded-2xl border border-emerald-500/20">
+          <div className="bg-slate-900/90 p-3 rounded-2xl border border-emerald-500/20">
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
               Ventas Estimadas Hoy
             </span>
-            <div className="text-2xl font-black text-emerald-400 pt-0.5">
+            <div className="text-xl sm:text-2xl font-black text-emerald-400 pt-0.5">
               ${MANAGER_KPIS.todaySalesUSD} USD
             </div>
             <span className="text-[10px] text-slate-500">
@@ -294,11 +324,11 @@ export function ManagerDashboard({
             </span>
           </div>
 
-          <div className="bg-slate-900/90 p-3.5 rounded-2xl border border-amber-500/20">
+          <div className="bg-slate-900/90 p-3 rounded-2xl border border-amber-500/20">
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-              Calzado Sanitizado en Uso
+              Zapatos Sanitizados
             </span>
-            <div className="text-2xl font-black text-amber-300 pt-0.5">
+            <div className="text-xl sm:text-2xl font-black text-amber-300 pt-0.5">
               {MANAGER_KPIS.shoesInUse} pares
             </div>
             <span className="text-[10px] text-slate-500">
@@ -306,14 +336,14 @@ export function ManagerDashboard({
             </span>
           </div>
 
-          <div className="bg-slate-900/90 p-3.5 rounded-2xl border border-red-500/20">
+          <div className="bg-slate-900/90 p-3 rounded-2xl border border-red-500/20">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                 Tasa BCV Oficial
               </span>
               <span className="text-[9px] text-emerald-400 font-bold">DolarAPI</span>
             </div>
-            <div className="text-2xl font-black text-red-400 pt-0.5">
+            <div className="text-xl sm:text-2xl font-black text-red-400 pt-0.5">
               {bcvRate.toFixed(2)} Bs/$
             </div>
             <span className="text-[10px] text-slate-500">
@@ -323,94 +353,38 @@ export function ManagerDashboard({
         </div>
 
         {/* Tabs Bar */}
-        <div className="flex items-center gap-2 px-6 pt-3 border-b border-white/5 overflow-x-auto no-scrollbar">
-          <button
-            onClick={() => {
-              soundFX.playClick();
-              setActiveTab("pistas");
-            }}
-            className={`btn-tactile pb-3 px-1 text-xs sm:text-sm font-black uppercase italic transition-colors border-b-2 shrink-0 cursor-pointer ${
-              activeTab === "pistas"
-                ? "border-sky-400 text-sky-400"
-                : "border-transparent text-slate-400 hover:text-white"
-            }`}
-          >
-            🎳 Control de 14 Pistas ({lanes.length})
-          </button>
+        <div className="bg-slate-950/90 p-1.5 border-b border-white/5 overflow-x-auto no-scrollbar flex items-center gap-1.5">
+          {tabItems.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
 
-          <button
-            onClick={() => {
-              soundFX.playClick();
-              setActiveTab("reservas");
-            }}
-            className={`btn-tactile pb-3 px-1 text-xs sm:text-sm font-black uppercase italic transition-colors border-b-2 shrink-0 cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "reservas"
-                ? "border-sky-400 text-sky-400"
-                : "border-transparent text-slate-400 hover:text-white"
-            }`}
-          >
-            <QrCode className="w-3.5 h-3.5 text-amber-300" />
-            <span>Pases Digitales QR ({filteredBookings.length})</span>
-          </button>
-
-          <button
-            onClick={() => {
-              soundFX.playClick();
-              setActiveTab("bytebridge");
-            }}
-            className={`btn-tactile pb-3 px-1 text-xs sm:text-sm font-black uppercase italic transition-colors border-b-2 shrink-0 cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "bytebridge"
-                ? "border-sky-400 text-sky-400"
-                : "border-transparent text-slate-400 hover:text-white"
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5 text-sky-400" />
-            <span>📱 App Android ByteBridge</span>
-          </button>
-
-          <button
-            onClick={() => {
-              soundFX.playClick();
-              setActiveTab("pasarela");
-            }}
-            className={`btn-tactile pb-3 px-1 text-xs sm:text-sm font-black uppercase italic transition-colors border-b-2 shrink-0 cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "pasarela"
-                ? "border-emerald-400 text-emerald-400"
-                : "border-transparent text-slate-400 hover:text-white"
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-300" />
-            <span>⚡ Pasarela Multi-Canal (3/3)</span>
-          </button>
-
-          <button
-            onClick={() => {
-              soundFX.playClick();
-              setActiveTab("whatsapp");
-            }}
-            className={`btn-tactile pb-3 px-1 text-xs sm:text-sm font-black uppercase italic transition-colors border-b-2 shrink-0 cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "whatsapp"
-                ? "border-emerald-400 text-emerald-400"
-                : "border-transparent text-slate-400 hover:text-white"
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-            <span>📲 Bot WhatsApp Entradas</span>
-          </button>
-
-          <button
-            onClick={() => {
-              soundFX.playClick();
-              setActiveTab("tasa");
-            }}
-            className={`btn-tactile pb-3 px-1 text-xs sm:text-sm font-black uppercase italic transition-colors border-b-2 shrink-0 cursor-pointer ${
-              activeTab === "tasa"
-                ? "border-sky-400 text-sky-400"
-                : "border-transparent text-slate-400 hover:text-white"
-            }`}
-          >
-            ⚡ DolarAPI & Tasa BCV
-          </button>
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  soundFX.playClick();
+                  setActiveTab(tab.id);
+                }}
+                className={`btn-tactile py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 cursor-pointer border ${
+                  isActive
+                    ? "bg-[#0033CC] text-white border-sky-400 shadow-md shadow-blue-600/30 font-sans uppercase italic"
+                    : "bg-transparent text-slate-400 border-transparent hover:bg-white/5 hover:text-slate-200"
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isActive ? "text-amber-300" : "text-slate-400"}`} />
+                <span>{tab.label}</span>
+                {tab.count !== undefined && (
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold border ${
+                      isActive ? "bg-black/30 text-white border-white/20" : tab.badgeColor || "bg-slate-800 text-slate-300"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Content Body */}
@@ -422,26 +396,32 @@ export function ManagerDashboard({
                 const isPlaying = lane.status === "en_juego";
                 const isReserved = lane.status === "reservada";
                 const isAvailable = lane.status === "disponible";
+                const isVip = lane.laneNumber >= 13;
 
                 return (
                   <div
                     key={lane.id}
                     className={`p-4 rounded-2xl border transition-all flex flex-col justify-between space-y-3 ${
                       isPlaying
-                        ? "bg-slate-900/90 border-sky-500/40 shadow-lg shadow-sky-500/10"
+                        ? "bg-[#071329] border-sky-500/40 shadow-lg shadow-sky-500/10"
                         : isReserved
                         ? "bg-amber-950/30 border-amber-500/30"
-                        : "bg-slate-950/70 border-white/5 hover:border-white/10"
+                        : "bg-slate-950/70 border-white/10 hover:border-white/20"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="w-7 h-7 rounded-xl bg-slate-800 flex items-center justify-center font-mono font-black text-white text-xs border border-white/10">
-                          {lane.laneNumber}
+                        <span
+                          className={`w-7 h-7 rounded-xl flex items-center justify-center font-mono font-black text-xs border ${
+                            isVip ? "bg-amber-500/20 text-amber-300 border-amber-500/30" : "bg-slate-900 text-white border-white/10"
+                          }`}
+                        >
+                          {lane.laneNumber.toString().padStart(2, "0")}
                         </span>
                         <div>
-                          <div className="text-xs font-black text-white">
-                            Pista {lane.laneNumber.toString().padStart(2, "0")}
+                          <div className="text-xs font-black text-white flex items-center gap-1">
+                            <span>Pista {lane.laneNumber.toString().padStart(2, "0")}</span>
+                            {isVip && <span className="text-[8px] bg-amber-500 text-black px-1 font-bold rounded">VIP</span>}
                           </div>
                           <span className="text-[10px] text-slate-400 font-mono">
                             {lane.name}
@@ -463,12 +443,18 @@ export function ManagerDashboard({
                     </div>
 
                     <div className="space-y-1 font-mono text-[11px] bg-slate-950/60 p-2.5 rounded-xl border border-white/5">
-                      <div className="text-slate-400">
-                        {lane.currentPlayers && lane.currentPlayers.length > 0 ? `${lane.currentPlayers.length} jugadores` : "Sin jugadores"}
+                      <div className="text-slate-300 flex items-center justify-between">
+                        <span>Jugadores:</span>
+                        <span className="font-bold text-white">
+                          {lane.currentPlayers && lane.currentPlayers.length > 0
+                            ? `${lane.currentPlayers.length} pax`
+                            : "Sin jugadores"}
+                        </span>
                       </div>
-                      {isPlaying && lane.remainingMinutes && (
-                        <div className="text-sky-300 font-bold">
-                          Tiempo Restante: {lane.remainingMinutes} min
+                      {isPlaying && lane.remainingMinutes !== undefined && (
+                        <div className="text-sky-300 font-bold flex items-center justify-between pt-1 border-t border-white/5">
+                          <span>Tiempo Restante:</span>
+                          <span className="text-amber-300">{lane.remainingMinutes} min</span>
                         </div>
                       )}
                     </div>
@@ -477,7 +463,7 @@ export function ManagerDashboard({
                       {isAvailable && (
                         <button
                           onClick={() => handleStatusChange(lane.id, "en_juego")}
-                          className="btn-tactile flex-1 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] flex items-center justify-center gap-1"
+                          className="btn-tactile flex-1 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1"
                         >
                           <Play className="w-3 h-3" />
                           <span>Iniciar</span>
@@ -488,7 +474,7 @@ export function ManagerDashboard({
                         <>
                           <button
                             onClick={() => handleAddMinutes(lane.id, 30)}
-                            className="btn-tactile flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11px] flex items-center justify-center gap-1"
+                            className="btn-tactile flex-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-sky-300 border border-sky-500/30 font-bold text-xs flex items-center justify-center gap-1"
                           >
                             <Plus className="w-3 h-3" />
                             <span>+30m</span>
@@ -506,10 +492,10 @@ export function ManagerDashboard({
                       {isReserved && (
                         <button
                           onClick={() => handleStatusChange(lane.id, "en_juego")}
-                          className="btn-tactile flex-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] flex items-center justify-center gap-1"
+                          className="btn-tactile flex-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-1"
                         >
                           <Play className="w-3 h-3" />
-                          <span>Activar Reserva</span>
+                          <span>Activar</span>
                         </button>
                       )}
                     </div>
@@ -534,17 +520,24 @@ export function ManagerDashboard({
                   />
                 </div>
 
-                <button
-                  onClick={() => {
-                    soundFX.playClick();
-                    const stored = JSON.parse(localStorage.getItem("pinzulia_bookings") || "[]");
-                    setBookingList(stored.length > 0 ? stored : DEFAULT_BOOKINGS);
-                  }}
-                  className="btn-tactile px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer border border-white/10"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Recargar Reservas</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  {["ALL", "CONFIRMADA", "EN_PISTA", "PENDIENTE"].map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => {
+                        soundFX.playClick();
+                        setFilterStatus(st);
+                      }}
+                      className={`btn-tactile px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold cursor-pointer border ${
+                        filterStatus === st
+                          ? "bg-sky-600 text-white border-sky-400"
+                          : "bg-slate-950 text-slate-400 border-white/5 hover:text-white"
+                      }`}
+                    >
+                      {st === "ALL" ? "Todos" : st === "CONFIRMADA" ? "Confirmadas" : st === "EN_PISTA" ? "En Pista" : "Pendientes"}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="bg-slate-900/90 rounded-2xl border border-white/10 overflow-hidden shadow-xl">
@@ -601,7 +594,7 @@ export function ManagerDashboard({
                             <td className="p-3">
                               <div>{b.playersCount} Jugadores</div>
                               <span className="text-[10px] text-slate-400">
-                                {b.shoesCount ? `${b.shoesCount} pares` : (b.shoeSizes?.length ? `${b.shoeSizes.length} pares` : "Sin calzado")}
+                                {b.shoesCount ? `${b.shoesCount} pares` : "Sin calzado"}
                               </span>
                             </td>
                             <td className="p-3">
@@ -629,15 +622,19 @@ export function ManagerDashboard({
                                   : "⏳ Pendiente"}
                               </span>
                             </td>
-                            <td className="p-3 text-right">
+                            <td className="p-3 text-right space-x-1.5">
+                              <Link
+                                href={`/ticket/${b.bookingCode}`}
+                                target="_blank"
+                                className="btn-tactile px-2 py-1 rounded-lg bg-slate-900 text-slate-300 text-[11px] font-mono border border-white/10"
+                              >
+                                Pase
+                              </Link>
                               <button
-                                onClick={() => {
-                                  soundFX.playPinStrike();
-                                  handleCheckInBooking(b.bookingCode);
-                                }}
+                                onClick={() => handleCheckInBooking(b.bookingCode)}
                                 className="btn-tactile px-2.5 py-1 rounded-lg bg-[#0033CC] hover:bg-[#00289E] text-white text-[11px] font-bold font-sans cursor-pointer shadow border border-white/20"
                               >
-                                Check-In Pista
+                                Check-In
                               </button>
                             </td>
                           </tr>
@@ -650,10 +647,13 @@ export function ManagerDashboard({
             </div>
           )}
 
-          {/* TAB 3: BYTEBRIDGE ANDROID APP CONFIG */}
+          {/* TAB 3: WHATSAPP BOT */}
+          {activeTab === "whatsapp" && <WhatsAppBotManager />}
+
+          {/* TAB 4: BYTEBRIDGE ANDROID APP CONFIG */}
           {activeTab === "bytebridge" && <ByteBridgeSettings />}
 
-          {/* TAB 4: MULTI-CHANNEL GATEWAY & LOGS */}
+          {/* TAB 5: MULTI-CHANNEL GATEWAY & LOGS */}
           {activeTab === "pasarela" && (
             <div className="space-y-6">
               <div className="bg-slate-900/90 rounded-3xl border border-sky-500/30 p-5 space-y-4 shadow-xl">
@@ -681,8 +681,8 @@ export function ManagerDashboard({
                       onChange={(e) => setSimChannel(e.target.value as IngestionChannel)}
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white focus:outline-none focus:border-sky-500"
                     >
-                      <option value="EMAIL">Email (Gmail)</option>
                       <option value="PUSH">Push (ByteBridge)</option>
+                      <option value="EMAIL">Email (Gmail)</option>
                       <option value="SMS">SMS (Banco)</option>
                     </select>
                   </div>
@@ -706,7 +706,7 @@ export function ManagerDashboard({
                       type="text"
                       value={simAmount}
                       onChange={(e) => setSimAmount(e.target.value)}
-                      placeholder="19791.75"
+                      placeholder="1.15"
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-emerald-400 font-bold focus:outline-none focus:border-sky-500"
                     />
                   </div>
@@ -728,7 +728,7 @@ export function ManagerDashboard({
                       className="btn-tactile w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-md font-sans"
                     >
                       <Send className="w-3.5 h-3.5" />
-                      <span>Disparar Ingesta</span>
+                      <span>Disparar</span>
                     </button>
                   </div>
                 </form>
@@ -757,7 +757,7 @@ export function ManagerDashboard({
 
                   {transactions.length === 0 ? (
                     <div className="text-slate-500 text-center py-6">
-                      No hay transacciones registradas aún. Abre una reserva para iniciar un cobro.
+                      No hay transacciones registradas aún.
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
@@ -841,9 +841,6 @@ export function ManagerDashboard({
               </div>
             </div>
           )}
-
-          {/* TAB 5: WHATSAPP BOT AUTOMATION */}
-          {activeTab === "whatsapp" && <WhatsAppBotManager />}
 
           {/* TAB 6: DOLARAPI */}
           {activeTab === "tasa" && (
