@@ -76,7 +76,7 @@ export const TransactionStore = {
         created_at: tx.createdAt,
         expires_at: tx.expiresAt,
         metadata: tx.metadata || {},
-      }).then(() => {}).catch(() => {});
+      }).then(() => {}, () => {});
     }
 
     return tx;
@@ -119,7 +119,7 @@ export const TransactionStore = {
               verified_at: tx.verifiedAt,
               bank_reference: log.reference,
               ingestion_channel: log.channel,
-            }).eq("id", tx.id).then(() => {}).catch(() => {});
+            }).eq("id", tx.id).then(() => {}, () => {});
           }
           break;
         }
@@ -154,7 +154,7 @@ export const TransactionStore = {
         channel: notification.channel,
         raw_payload: notification.rawText || "",
         is_processed: false,
-      }).then(() => {}).catch(() => {});
+      }).then(() => {}, () => {});
     }
 
     // Scan Pending Transactions by EXACT UNIQUE DECIMAL AMOUNT or REFERENCE
@@ -184,7 +184,7 @@ export const TransactionStore = {
               verified_at: tx.verifiedAt,
               bank_reference: cleanRef,
               ingestion_channel: notification.channel,
-            }).eq("id", tx.id).then(() => {}).catch(() => {});
+            }).eq("id", tx.id).then(() => {}, () => {});
           }
 
           return {
