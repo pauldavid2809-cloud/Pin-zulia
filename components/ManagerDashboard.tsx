@@ -187,7 +187,7 @@ export function ManagerDashboard({
     );
   });
 
-  const [activeTab, setActiveTab] = useState<"pistas" | "comandas" | "reservas" | "pasarela" | "tasa">("pistas");
+  const [activeTab, setActiveTab] = useState<"pistas" | "comandas" | "reservas" | "pasarela" | "tasa" | "whatsapp">("pistas");
   const [kitchenOrders, setKitchenOrders] = useState<KitchenOrder[]>(INITIAL_KITCHEN_ORDERS);
   const [isSyncingDolarApi, setIsSyncingDolarApi] = useState<boolean>(false);
 
