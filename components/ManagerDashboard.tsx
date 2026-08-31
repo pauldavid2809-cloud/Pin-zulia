@@ -437,14 +437,14 @@ export function ManagerDashboard({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="w-7 h-7 rounded-xl bg-slate-800 flex items-center justify-center font-mono font-black text-white text-xs border border-white/10">
-                          {lane.number}
+                          {lane.laneNumber}
                         </span>
                         <div>
                           <div className="text-xs font-black text-white">
-                            Pista {lane.number.toString().padStart(2, "0")}
+                            Pista {lane.laneNumber.toString().padStart(2, "0")}
                           </div>
                           <span className="text-[10px] text-slate-400 font-mono">
-                            {lane.category}
+                            {lane.name}
                           </span>
                         </div>
                       </div>
@@ -464,7 +464,7 @@ export function ManagerDashboard({
 
                     <div className="space-y-1 font-mono text-[11px] bg-slate-950/60 p-2.5 rounded-xl border border-white/5">
                       <div className="text-slate-400">
-                        {lane.currentPlayers ? `${lane.currentPlayers} jugadores` : "Sin jugadores"}
+                        {lane.currentPlayers && lane.currentPlayers.length > 0 ? `${lane.currentPlayers.length} jugadores` : "Sin jugadores"}
                       </div>
                       {isPlaying && lane.remainingMinutes && (
                         <div className="text-sky-300 font-bold">
