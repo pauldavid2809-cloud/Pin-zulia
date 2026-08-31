@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import confetti from "canvas-confetti";
 import {
   PINZULIA_LANES,
   MANAGER_KPIS,
   BowlingLane,
   LaneStatus,
+  OFFICIAL_RATES,
+  AVAILABLE_SHOE_SIZES,
 } from "@/data/pinzuliaData";
 import { formatUSD, formatVES } from "@/lib/utils";
 import { useBcvRate } from "@/lib/useBcvRate";
@@ -22,7 +25,7 @@ import {
   AlertCircle,
   Radio,
   RefreshCw,
-  Printer, Camera,
+  Printer,
   Smartphone,
   MessageSquare,
   QrCode,
@@ -38,6 +41,10 @@ import {
   DollarSign,
   Phone,
   Lock,
+  Camera,
+  X,
+  CreditCard,
+  Banknote,
 } from "lucide-react";
 import { ByteBridgeSettings } from "@/components/ByteBridgeSettings";
 import { WhatsAppBotManager } from "@/components/WhatsAppBotManager";
@@ -75,6 +82,7 @@ const DEFAULT_BOOKINGS = [
 ];
 
 type AdminTab = "pistas" | "reservas" | "whatsapp" | "bytebridge" | "pasarela" | "tasa";
+type PaymentMethod = "EFECTIVO" | "PAGOMOVIL" | "PUNTO";
 
 export default function AdminPage() {
   const { rate: bcvRate, setCustomRate: setBcvRate } = useBcvRate();
@@ -85,6 +93,17 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("pistas");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
+  const [shoesInUse, setShoesInUse] = useState<number>(MANAGER_KPIS.shoesInUse);
+
+  // Walk-In POS Modal State
+  const [showWalkInModal, setShowWalkInModal] = useState<boolean>(false);
+  const [walkInClientName, setWalkInClientName] = useState<string>("");
+  const [walkInClientPhone, setWalkInClientPhone] = useState<string>("");
+  const [walkInLaneNumber, setWalkInLaneNumber] = useState<number>(1);
+  const [walkInDurationHours, setWalkInDurationHours] = useState<number>(1);
+  const [walkInPlayersCount, setWalkInPlayersCount] = useState<number>(4);
+  const [walkInIncludeShoes, setWalkInIncludeShoes] = useState<boolean>(true);
+  const [walkInPaymentMethod, setWalkInPaymentMethod] = useState<PaymentMethod>("EFECTIVO");
 
   const [bookingList, setBookingList] = useState<any[]>(() => {
     if (typeof window !== "undefined") {
@@ -116,6 +135,35 @@ export default function AdminPage() {
     }
   }, [activeTab]);
 
+  // Automatic Lane Expiration & Countdown Timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLanes((prev) =>
+        prev.map((lane) => {
+          if (lane.status === "en_juego" && lane.remainingMinutes !== undefined) {
+            if (lane.remainingMinutes <= 1) {
+              // Lane expired: auto-release
+              soundFX.playPinStrike();
+              return {
+                ...lane,
+                status: "disponible",
+                remainingMinutes: undefined,
+                currentPlayers: [],
+              };
+            }
+            return {
+              ...lane,
+              remainingMinutes: lane.remainingMinutes - 1,
+            };
+          }
+          return lane;
+        })
+      );
+    }, 60000); // Check every minute
+
+    return () => clearInterval(timer);
+  }, []);
+
   const handleStatusChange = (laneId: number, newStatus: LaneStatus) => {
     soundFX.playClick();
     setLanes((prev) =>
@@ -145,6 +193,12 @@ export default function AdminPage() {
     );
   };
 
+  const handleReturnShoes = (count: number = 4) => {
+    soundFX.playClick();
+    setShoesInUse((prev) => Math.max(0, prev - count));
+    alert("✓ " + count + " pares de zapatos sanitizados reingresados a las cabinas UV.");
+  };
+
   const handleCheckInBooking = (code: string) => {
     soundFX.playPinStrike();
     setBookingList((prev) =>
@@ -157,6 +211,103 @@ export default function AdminPage() {
       );
       localStorage.setItem("pinzulia_bookings", JSON.stringify(updated));
     } catch {}
+  };
+
+  const handleOpenWalkInModal = () => {
+    soundFX.playClick();
+    // Preselect the first free lane
+    const freeLane = lanes.find((l) => l.status === "disponible");
+    if (freeLane) setWalkInLaneNumber(freeLane.laneNumber);
+    setShowWalkInModal(true);
+  };
+
+  const handleCreateWalkInSale = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!walkInClientName.trim() || !walkInClientPhone.trim()) {
+      alert("Por favor ingresa nombre y teléfono WhatsApp del cliente.");
+      return;
+    }
+
+    soundFX.playPinStrike();
+    soundFX.playStrikeFanfare();
+    try {
+      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+    } catch {}
+
+    const randomDigits = Math.floor(1000 + Math.random() * 9000);
+    const bookingCode = "PIN-" + randomDigits;
+    const baseServiceUSD = OFFICIAL_RATES.bowlingHourUSD * walkInDurationHours;
+    const shoesCount = walkInIncludeShoes ? walkInPlayersCount : 0;
+    const shoesTotalUSD = shoesCount * OFFICIAL_RATES.shoeRentalUSD;
+    const totalUSD = baseServiceUSD + shoesTotalUSD;
+
+    const newBooking = {
+      bookingCode,
+      packageName: "Pista de Bowling (" + walkInDurationHours + "h • Taquilla)",
+      serviceType: "bowling",
+      laneNumber: walkInLaneNumber,
+      date: new Date().toISOString().split("T")[0],
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      playersCount: walkInPlayersCount,
+      shoesCount,
+      totalUSD,
+      clientName: walkInClientName.trim(),
+      clientPhone: walkInClientPhone.trim(),
+      status: "EN_PISTA",
+      paymentMethod: walkInPaymentMethod,
+    };
+
+    // 1. Activate Lane immediately
+    setLanes((prev) =>
+      prev.map((l) => {
+        if (l.laneNumber === walkInLaneNumber) {
+          return {
+            ...l,
+            status: "en_juego",
+            remainingMinutes: walkInDurationHours * 60,
+            currentPlayers: Array.from({ length: walkInPlayersCount }, (_, i) => "Jugador " + (i + 1)),
+          };
+        }
+        return l;
+      })
+    );
+
+    // 2. Update shoes in use
+    if (shoesCount > 0) {
+      setShoesInUse((prev) => prev + shoesCount);
+    }
+
+    // 3. Save to bookings list
+    setBookingList((prev) => [newBooking, ...prev]);
+    try {
+      const stored = JSON.parse(localStorage.getItem("pinzulia_bookings") || "[]");
+      stored.unshift(newBooking);
+      localStorage.setItem("pinzulia_bookings", JSON.stringify(stored));
+    } catch {}
+
+    // 4. Automated WhatsApp Dispatch
+    const autoMessage = "🎳 *PinZulia Bowling Boutique (1963)*\n\n" +
+      "¡Bienvenido *" + walkInClientName + "*! Tu registro en Taquilla para *Pista " + walkInLaneNumber.toString().padStart(2, "0") + "* está activo.\n\n" +
+      "🎟️ *Pase Digital:* #" + bookingCode + "\n" +
+      "⏱️ *Duración:* " + walkInDurationHours + " hora(s) de juego\n" +
+      "👥 *Jugadores:* " + walkInPlayersCount + " Personas\n" +
+      "👟 *Calzado:* " + shoesCount + " pares sanitizados UV\n" +
+      "💵 *Total Pagado:* $" + totalUSD.toFixed(2) + " USD (" + walkInPaymentMethod + ")\n\n" +
+      "👉 *Abre tu Marcador y Pase Digital aquí:*\nhttps://pin-zulia.vercel.app/ticket/" + bookingCode + "\n\n" +
+      "_¡Que comience la partida!_";
+
+    fetch("/api/whatsapp/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: walkInClientPhone.trim(),
+        message: autoMessage,
+      }),
+    }).catch(() => {});
+
+    setShowWalkInModal(false);
+    setWalkInClientName("");
+    setWalkInClientPhone("");
   };
 
   const handleSaveRate = (e: React.FormEvent) => {
@@ -269,13 +420,15 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Header Right Status */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-white/10 font-mono text-[10px] sm:text-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-slate-400 hidden xs:inline">BCV:</span>
-            <span className="text-emerald-400 font-bold">{bcvRate.toFixed(2)} Bs/$</span>
-          </div>
+        {/* Header Right Status & Actions */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <button
+            onClick={handleOpenWalkInModal}
+            className="btn-tactile inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-xs font-sans uppercase italic shadow-md shadow-emerald-950/50 cursor-pointer border border-white/20"
+          >
+            <Plus className="w-3.5 h-3.5 text-amber-300 stroke-[3]" />
+            <span>Venta Taquilla</span>
+          </button>
 
           <Link
             href="/escanear"
@@ -283,23 +436,19 @@ export default function AdminPage() {
             className="btn-tactile inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs font-mono shadow-md shadow-blue-600/25"
           >
             <Camera className="w-3.5 h-3.5" />
-            <span>Escanear QR</span>
+            <span className="hidden xs:inline">Escanear QR</span>
           </Link>
-          <Link
-            href="/pistas-qr"
-            target="_blank"
-            onClick={() => soundFX.playClick()}
-            className="btn-tactile hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-sky-300 border border-sky-500/30 text-xs font-bold font-mono"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Stands QR</span>
-          </Link>
+
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-white/10 font-mono text-[10px] sm:text-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-emerald-400 font-bold">{bcvRate.toFixed(2)} Bs/$</span>
+          </div>
         </div>
       </header>
 
       {/* 2. MAIN COCKPIT BODY */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6">
-        {/* COMPACT METRICS BAR FOR MOBILE & DESKTOP */}
+        {/* COMPACT METRICS BAR */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 font-mono">
           <div className="bg-slate-900/90 p-2.5 sm:p-3.5 rounded-2xl border border-sky-500/20 shadow-md">
             <div className="flex items-center justify-between text-slate-400 text-[9px] sm:text-[11px] font-bold uppercase">
@@ -310,7 +459,7 @@ export default function AdminPage() {
               {activeCount} <span className="text-xs text-slate-500">/ {lanes.length}</span>
             </div>
             <span className="text-[9px] sm:text-[10px] text-slate-400 block pt-0.5">
-              {occupancyPct}% ocupación
+              {occupancyPct}% ocupación (Auto-liberación activa)
             </span>
           </div>
 
@@ -330,10 +479,16 @@ export default function AdminPage() {
           <div className="bg-slate-900/90 p-2.5 sm:p-3.5 rounded-2xl border border-amber-500/20 shadow-md">
             <div className="flex items-center justify-between text-slate-400 text-[9px] sm:text-[11px] font-bold uppercase">
               <span>Zapatos en Uso</span>
-              <Footprints className="w-3 h-3 text-amber-300" />
+              <button
+                onClick={() => handleReturnShoes(4)}
+                className="text-[9px] text-amber-300 hover:text-amber-200 underline font-bold"
+                title="Registrar devolución de 4 pares"
+              >
+                -4 pares
+              </button>
             </div>
             <div className="text-lg sm:text-2xl font-black text-amber-300 pt-0.5">
-              {MANAGER_KPIS.shoesInUse} <span className="text-xs text-slate-500">pares</span>
+              {shoesInUse} <span className="text-xs text-slate-500">pares</span>
             </div>
             <span className="text-[9px] sm:text-[10px] text-slate-400 block pt-0.5">
               Cabinas UV Sanitizantes
@@ -356,7 +511,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* DESKTOP TABS (HIDDEN ON MOBILE) */}
+        {/* DESKTOP TABS */}
         <div className="hidden md:flex bg-slate-950/80 p-1.5 rounded-2xl border border-white/10 overflow-x-auto no-scrollbar items-center gap-1.5 shadow-lg">
           {tabItems.map((tab) => {
             const Icon = tab.icon;
@@ -398,7 +553,7 @@ export default function AdminPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between bg-slate-950/60 p-3 rounded-2xl border border-white/10">
                 <span className="text-xs font-black text-white uppercase italic font-sans flex items-center gap-1.5">
-                  <span>🎳 14 Pistas Brunswick™</span>
+                  <span>🎳 14 Pistas Brunswick™ (Auto-Off al llegar a 0m)</span>
                 </span>
 
                 <div className="flex items-center gap-2 text-[10px] font-mono">
@@ -411,7 +566,7 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* 2-COLUMN GRID ON MOBILE (FLAWLESS DENSITY) / 4-COL ON DESKTOP */}
+              {/* 2-COLUMN GRID ON MOBILE / 4-COL ON DESKTOP */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3.5">
                 {lanes.map((lane) => {
                   const isPlaying = lane.status === "en_juego";
@@ -463,7 +618,7 @@ export default function AdminPage() {
                       <div className="space-y-0.5 font-mono text-[10px] bg-slate-950/80 p-2 rounded-xl border border-white/5">
                         <div className="text-slate-300 truncate">
                           {lane.currentPlayers && lane.currentPlayers.length > 0
-                            ? `${lane.currentPlayers.length} jugadores`
+                            ? lane.currentPlayers.length + " jugadores"
                             : "Sin jugadores"}
                         </div>
                         {isPlaying && lane.remainingMinutes !== undefined && (
@@ -498,7 +653,7 @@ export default function AdminPage() {
                             <button
                               onClick={() => handleStatusChange(lane.id, "disponible")}
                               className="btn-tactile p-1.5 rounded-lg bg-red-950/80 text-red-300 border border-red-500/30 cursor-pointer"
-                              title="Liberar Pista"
+                              title="Liberar Pista Manualmente"
                             >
                               <RotateCcw className="w-3 h-3" />
                             </button>
@@ -522,7 +677,7 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* TAB 2: QR RESERVATIONS (TOUCH CARDS ON MOBILE) */}
+          {/* TAB 2: QR RESERVATIONS */}
           {activeTab === "reservas" && (
             <div className="space-y-3">
               <div className="p-3 bg-slate-950/80 rounded-2xl border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2.5">
@@ -583,6 +738,11 @@ export default function AdminPage() {
                           >
                             {b.status === "EN_PISTA" ? "🎳 En Pista" : b.status === "CONFIRMADA" ? "✓ Confirmada" : "⏳ Pendiente"}
                           </span>
+                          {b.paymentMethod && (
+                            <span className="text-[9px] text-slate-400 bg-slate-950 px-1.5 py-0.2 rounded border border-white/10">
+                              {b.paymentMethod}
+                            </span>
+                          )}
                         </div>
 
                         <div className="font-bold text-white font-sans text-xs sm:text-sm">{b.clientName}</div>
@@ -609,12 +769,14 @@ export default function AdminPage() {
                             Pase
                           </Link>
 
-                          <button
-                            onClick={() => handleCheckInBooking(b.bookingCode)}
-                            className="btn-tactile px-3 py-1.5 rounded-xl bg-[#0033CC] hover:bg-[#00289E] text-white text-xs font-bold font-sans shadow-md border border-white/20"
-                          >
-                            Check-In
-                          </button>
+                          {b.status !== "EN_PISTA" && (
+                            <button
+                              onClick={() => handleCheckInBooking(b.bookingCode)}
+                              className="btn-tactile px-3 py-1.5 rounded-xl bg-[#0033CC] hover:bg-[#00289E] text-white text-xs font-bold font-sans shadow-md border border-white/20"
+                            >
+                              Check-In
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -757,7 +919,7 @@ export default function AdminPage() {
         </div>
       </main>
 
-      {/* 5. NATIVE MOBILE BOTTOM NAVIGATION DOCK (FIXED AT SCREEN BOTTOM ON MOBILE) */}
+      {/* 5. NATIVE MOBILE BOTTOM NAVIGATION DOCK */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#070e1e]/98 backdrop-blur-2xl border-t border-white/15 px-2 py-2 flex items-center justify-around shadow-2xl">
         {tabItems.map((tab) => {
           const Icon = tab.icon;
@@ -785,6 +947,204 @@ export default function AdminPage() {
           );
         })}
       </nav>
+
+      {/* 6. EXPRESS WALK-IN POS MODAL (VENTA EN TAQUILLA) */}
+      {showWalkInModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-xl animate-in fade-in">
+          <div className="bg-[#070e1e] border-2 border-emerald-500/40 rounded-3xl w-full max-w-lg max-h-[94vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4 text-slate-100">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center text-white">
+                  <Plus className="w-5 h-5 stroke-[3]" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-white uppercase italic font-sans">
+                    Venta Rápida en Taquilla (Walk-In)
+                  </h3>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    Cobro inmediato & despacho automático por WhatsApp
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowWalkInModal(false)}
+                className="p-1.5 rounded-xl bg-slate-900 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateWalkInSale} className="space-y-3.5 font-mono text-xs">
+              {/* Customer Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400">Titular:</span>
+                  <input
+                    type="text"
+                    value={walkInClientName}
+                    onChange={(e) => setWalkInClientName(e.target.value)}
+                    placeholder="Ej: Daniel Castillo"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white font-sans text-xs focus:outline-none focus:border-emerald-400"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400">WhatsApp para Pase:</span>
+                  <input
+                    type="tel"
+                    value={walkInClientPhone}
+                    onChange={(e) => setWalkInClientPhone(e.target.value)}
+                    placeholder="Ej: 0414 1234567"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-emerald-400"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Lane Selection & Duration */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400">Pista a Asignar:</span>
+                  <select
+                    value={walkInLaneNumber}
+                    onChange={(e) => setWalkInLaneNumber(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white font-bold"
+                  >
+                    {lanes.map((l) => (
+                      <option key={l.id} value={l.laneNumber}>
+                        Pista {l.laneNumber.toString().padStart(2, "0")} {l.status === "disponible" ? "(Libre)" : "(En Juego)"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400">Horas de Juego:</span>
+                  <select
+                    value={walkInDurationHours}
+                    onChange={(e) => setWalkInDurationHours(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white font-bold"
+                  >
+                    <option value={1}>1 Hora ($25)</option>
+                    <option value={2}>2 Horas ($50)</option>
+                    <option value={3}>3 Horas ($75)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Players & Shoes */}
+              <div className="p-3 bg-slate-950 rounded-2xl border border-white/10 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-300 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Jugadores:</span>
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setWalkInPlayersCount(n)}
+                        className={`w-6 h-6 rounded-lg text-xs font-bold ${
+                          walkInPlayersCount === n ? "bg-[#0033CC] text-white" : "bg-slate-900 text-slate-400"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                  <span className="text-[10px] text-slate-300 flex items-center gap-1.5">
+                    <Footprints className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Calzado Sanitizado ($2.50 c/u):</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={walkInIncludeShoes}
+                    onChange={(e) => setWalkInIncludeShoes(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Payment Method */}
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-400">Método de Pago:</span>
+                <div className="grid grid-cols-3 gap-1.5 font-mono text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setWalkInPaymentMethod("EFECTIVO")}
+                    className={`py-2 rounded-xl border flex flex-col items-center gap-1 ${
+                      walkInPaymentMethod === "EFECTIVO"
+                        ? "bg-emerald-600/30 border-emerald-400 text-emerald-300"
+                        : "bg-slate-950 border-white/10 text-slate-400"
+                    }`}
+                  >
+                    <Banknote className="w-3.5 h-3.5" />
+                    <span>Efectivo USD</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWalkInPaymentMethod("PAGOMOVIL")}
+                    className={`py-2 rounded-xl border flex flex-col items-center gap-1 ${
+                      walkInPaymentMethod === "PAGOMOVIL"
+                        ? "bg-sky-600/30 border-sky-400 text-sky-300"
+                        : "bg-slate-950 border-white/10 text-slate-400"
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>Pago Móvil</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWalkInPaymentMethod("PUNTO")}
+                    className={`py-2 rounded-xl border flex flex-col items-center gap-1 ${
+                      walkInPaymentMethod === "PUNTO"
+                        ? "bg-amber-600/30 border-amber-400 text-amber-300"
+                        : "bg-slate-950 border-white/10 text-slate-400"
+                    }`}
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>Punto / Tarjeta</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Total Calculation & Action */}
+              <div className="p-3 bg-slate-950 rounded-2xl border border-emerald-500/40 flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] text-slate-400 uppercase">Total a Cobrar:</span>
+                  <div className="text-base font-black text-emerald-400">
+                    {formatUSD(
+                      OFFICIAL_RATES.bowlingHourUSD * walkInDurationHours +
+                        (walkInIncludeShoes ? walkInPlayersCount * OFFICIAL_RATES.shoeRentalUSD : 0)
+                    )}
+                  </div>
+                  <span className="text-[8px] text-slate-500">
+                    ≈ {formatVES(
+                      OFFICIAL_RATES.bowlingHourUSD * walkInDurationHours +
+                        (walkInIncludeShoes ? walkInPlayersCount * OFFICIAL_RATES.shoeRentalUSD : 0),
+                      bcvRate
+                    )}
+                  </span>
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn-tactile px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-xs uppercase italic font-sans tracking-wide shadow-md shadow-emerald-950/60 cursor-pointer"
+                >
+                  Cobrar & Activar Pista
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

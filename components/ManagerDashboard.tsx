@@ -97,6 +97,17 @@ export function ManagerDashboard({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
 
+  const [shoesInUse, setShoesInUse] = useState<number>(MANAGER_KPIS.shoesInUse);
+  const [showWalkInModal, setShowWalkInModal] = useState<boolean>(false);
+  const [walkInClientName, setWalkInClientName] = useState<string>("");
+  const [walkInClientPhone, setWalkInClientPhone] = useState<string>("");
+  const [walkInLaneNumber, setWalkInLaneNumber] = useState<number>(1);
+  const [walkInDurationHours, setWalkInDurationHours] = useState<number>(1);
+  const [walkInPlayersCount, setWalkInPlayersCount] = useState<number>(4);
+  const [walkInIncludeShoes, setWalkInIncludeShoes] = useState<boolean>(true);
+  const [walkInPaymentMethod, setWalkInPaymentMethod] = useState<"EFECTIVO" | "PAGOMOVIL" | "PUNTO">("EFECTIVO");
+
+
   const [bookingList, setBookingList] = useState<any[]>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("pinzulia_bookings");
@@ -119,6 +130,25 @@ export function ManagerDashboard({
   useEffect(() => {
     setTempRate(bcvRate.toFixed(2));
   }, [bcvRate]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLanes((prev) =>
+        prev.map((lane) => {
+          if (lane.status === "en_juego" && lane.remainingMinutes !== undefined) {
+            if (lane.remainingMinutes <= 1) {
+              soundFX.playPinStrike();
+              return { ...lane, status: "disponible", remainingMinutes: undefined, currentPlayers: [] };
+            }
+            return { ...lane, remainingMinutes: lane.remainingMinutes - 1 };
+          }
+          return lane;
+        })
+      );
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
+
 
   useEffect(() => {
     if (activeTab === "pasarela") {
