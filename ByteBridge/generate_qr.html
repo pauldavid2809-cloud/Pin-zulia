@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Generador Multi-Negocio & Google Apps Script - ByteBridge</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #090D16;
+            color: #F8FAFC;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 30px 20px;
+        }
+        .container {
+            max-width: 780px;
+            width: 100%;
+        }
+        .card {
+            background: #131B2E;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 28px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            margin-bottom: 24px;
+        }
+        .logo-img {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            box-shadow: 0 0 20px rgba(45, 212, 191, 0.4);
+        }
+        h1 {
+            font-size: 22px;
+            margin: 0 0 8px 0;
+            color: #2DD4BF;
+        }
+        p {
+            font-size: 13px;
+            color: #94A3B8;
+            line-height: 1.5;
+            margin-top: 0;
+        }
+        .business-selector {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .btn-biz {
+            background: #090D16;
+            border: 1px solid #334155;
+            color: #94A3B8;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .btn-biz.active {
+            border-color: #2DD4BF;
+            color: #2DD4BF;
+            background: rgba(45, 212, 191, 0.1);
+        }
+        #qrcode {
+            margin: 15px auto;
+            background: #FFFFFF;
+            padding: 16px;
+            border-radius: 12px;
+            display: inline-block;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            text-align: left;
+            margin-top: 15px;
+        }
+        @media (max-width: 650px) {
+            .grid-2 { grid-template-columns: 1fr; }
+        }
+        .code-box {
+            background: #090D16;
+            border: 1px solid #1E293B;
+            border-radius: 10px;
+            padding: 14px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #38BDF8;
+            height: 220px;
+            overflow-y: auto;
+            white-space: pre;
+            text-align: left;
+        }
+        .btn-action {
+            background: #2DD4BF;
+            color: #090D16;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 13px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 10px;
+            transition: opacity 0.2s;
+        }
+        .btn-action:hover { opacity: 0.9; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <img class="logo-img" src="app/src/main/res/drawable/bytebridge_logo.png" alt="ByteBridge Logo" onerror="this.style.display='none'">
+            <h1>⚡ ByteBridge Multi-WebApp Gateway</h1>
+            <p>Selecciona tu negocio para generar el <strong>Código QR de Emparejamiento</strong> y el <strong>Google Apps Script 24/7</strong> personalizado.</p>
+
+            <!-- Selector de Negocio -->
+            <div class="business-selector">
+                <button class="btn-biz active" onclick="selectBusiness('pinzulia')">🎳 PinZulia Bowling</button>
+                <button class="btn-biz" onclick="selectBusiness('corner')">🍺 The Corner Bar</button>
+                <button class="btn-biz" onclick="selectBusiness('custom')">🌐 Otro Negocio</button>
+            </div>
+
+            <div class="grid-2">
+                <!-- Columna 1: QR para la App Móvil -->
+                <div>
+                    <h3 style="margin-top: 0; font-size: 14px; color: #F8FAFC;">📱 1. Emparejar Teléfono (App ByteBridge)</h3>
+                    <p style="font-size: 12px;">Abre la app, ve a <strong>📷 Escanear QR</strong> y apunta aquí:</p>
+                    <div style="text-align: center;">
+                        <div id="qrcode"></div>
+                    </div>
+                </div>
+
+                <!-- Columna 2: Google Apps Script para la Nube -->
+                <div>
+                    <h3 style="margin-top: 0; font-size: 14px; color: #F8FAFC;">☁️ 2. Google Apps Script 24/7 (Gmail)</h3>
+                    <p style="font-size: 12px;">Script listo para pegar en <a href="https://script.google.com" target="_blank" style="color: #2DD4BF;">script.google.com</a>:</p>
+                    <div class="code-box" id="gasCode"></div>
+                    <button class="btn-action" onclick="copyGasCode()">📋 Copiar Script de Google</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const businesses = {
+            pinzulia: {
+                businessName: "PinZulia Bowling",
+                webhookUrl: "https://pinzulia.com/api/v1/ingest/push",
+                apiKey: "PINZULIA_SECURE_KEY_2026",
+                isActive: true
+            },
+            corner: {
+                businessName: "The Corner Sports Bar",
+                webhookUrl: "https://thecorner.com/api/v1/ingest/push",
+                apiKey: "CORNER_SECURE_KEY_2026",
+                isActive: true
+            },
+            custom: {
+                businessName: "Mi Nuevo Negocio",
+                webhookUrl: "https://mi-negocio.com/api/v1/ingest/push",
+                apiKey: "BRIDGE_KEY_CUSTOM_2026",
+                isActive: true
+            }
+        };
+
+        let currentBiz = 'pinzulia';
+
+        function selectBusiness(key) {
+            currentBiz = key;
+            document.querySelectorAll('.btn-biz').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            render();
+        }
+
+        function generateGoogleScript(config) {
+            return `/**
+ * ⚡ ByteBridge - Google Cloud Auto-Reconciliation Script
+ * Negocio: ${config.businessName}
+ */
+const WEBHOOK_URL = "${config.webhookUrl}";
+const API_KEY = "${config.apiKey}";
+const BUSINESS_NAME = "${config.businessName}";
+
+function syncZelleAndBankEmails() {
+  const query = 'is:unread (from:zelle OR from:chase OR from:bankofamerica OR from:wellsfargo OR subject:"Zelle" OR subject:"PagoClave")';
+  const threads = GmailApp.search(query, 0, 15);
+
+  for (const thread of threads) {
+    const messages = thread.getMessages();
+    for (const message of messages) {
+      if (message.isUnread()) {
+        const body = message.getPlainBody();
+        const subject = message.getSubject();
+        const from = message.getFrom();
+
+        const paymentData = parseEmailPayment(subject + " " + body, from);
+        if (paymentData) {
+          const success = dispatchWebhook(paymentData, body);
+          if (success) message.markRead();
+        }
+      }
+    }
+  }
+}
+
+function parseEmailPayment(text, from) {
+  const zelleSent = text.match(/(.+?)\\s+sent\\s+you\\s+\\$([0-9.,]+)/i);
+  const zelleRec = text.match(/received\\s+\\$([0-9.,]+)\\s+from\\s+(.+?)(?:\\s+with\\s+Zelle|\\.)/i);
+  const refMatch = text.match(/(?:confirmation|reference|ref|trx|code)[:\\s#]+([A-Za-z0-9\\-_]{6,18})/i);
+
+  if (zelleSent) {
+    return {
+      bank: "ZELLE_CLOUD",
+      bankName: "Zelle (${config.businessName})",
+      amount: parseFloat(zelleSent[2].replace(",", "")),
+      currency: "USD",
+      payerName: zelleSent[1].trim(),
+      reference: refMatch ? refMatch[1] : "ZEL-" + new Date().getTime().toString().slice(-8)
+    };
+  }
+  if (zelleRec) {
+    return {
+      bank: "ZELLE_CLOUD",
+      bankName: "Zelle (${config.businessName})",
+      amount: parseFloat(zelleRec[1].replace(",", "")),
+      currency: "USD",
+      payerName: zelleRec[2].trim(),
+      reference: refMatch ? refMatch[1] : "ZEL-" + new Date().getTime().toString().slice(-8)
+    };
+  }
+  return null;
+}
+
+function dispatchWebhook(data, rawText) {
+  const payload = {
+    event: "payment.received",
+    eventId: Utilities.getUuid(),
+    idempotencyKey: Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, data.bank + data.reference + data.amount)).substring(0, 24),
+    timestamp: new Date().getTime(),
+    channel: "GMAIL_CLOUD_SCRIPT",
+    data: { ...data, rawMessage: rawText.substring(0, 300), receivedAt: new Date().getTime() },
+    metadata: { bridgeVersion: "1.0.0-gas", businessName: BUSINESS_NAME }
+  };
+
+  const jsonBody = JSON.stringify(payload);
+  const signatureBytes = Utilities.computeHmacSha256Signature(jsonBody, API_KEY);
+  const signature = signatureBytes.map(byte => ('0' + (byte & 0xFF).toString(16)).slice(-2)).join('');
+
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    headers: {
+      "X-ByteBridge-Signature": signature,
+      "X-ByteBridge-Timestamp": payload.timestamp.toString(),
+      "X-ByteBridge-Event-ID": payload.eventId,
+      "X-ByteBridge-Currency": data.currency
+    },
+    payload: jsonBody,
+    muteHttpExceptions: true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(WEBHOOK_URL, options);
+    return response.getResponseCode() >= 200 && response.getResponseCode() < 300;
+  } catch (e) {
+    return false;
+  }
+}`;
+        }
+
+        function render() {
+            const config = businesses[currentBiz];
+            const qrContainer = document.getElementById('qrcode');
+            qrContainer.innerHTML = '';
+
+            QRCode.toCanvas(document.createElement('canvas'), JSON.stringify(config), { width: 180, margin: 1 }, function (error, canvas) {
+                if (error) console.error(error);
+                qrContainer.appendChild(canvas);
+            });
+
+            document.getElementById('gasCode').innerText = generateGoogleScript(config);
+        }
+
+        function copyGasCode() {
+            const code = document.getElementById('gasCode').innerText;
+            navigator.clipboard.writeText(code).then(() => {
+                alert("¡Google Apps Script copiado al portapapeles! Ahora pégalo en script.google.com");
+            });
+        }
+
+        render();
+    </script>
+</body>
+</html>

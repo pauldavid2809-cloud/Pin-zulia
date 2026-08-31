@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">ByteBridge</string>
+    <string name="app_tagline">Puente de Conciliación Bancaria Instantáneo</string>
+    <string name="service_push_listener_label">ByteBridge Interceptor Bancario</string>
+    
+    <!-- Daemon Notifications -->
+    <string name="daemon_channel_id">bytebridge_daemon_channel</string>
+    <string name="daemon_channel_name">ByteBridge Estado en Segundo Plano</string>
+    <string name="daemon_channel_desc">Mantiene activo el daemon de conciliación bancaria instantánea</string>
+    <string name="daemon_notification_title">ByteBridge Daemon Activo ⚡</string>
+    <string name="daemon_notification_desc">Escuchando confirmaciones Pago Móvil en tiempo real</string>
+
+    <!-- Payment Notifications -->
+    <string name="payment_channel_id">bytebridge_payment_channel</string>
+    <string name="payment_channel_name">Alertas de Pagos Ingeridos</string>
+    <string name="payment_channel_desc">Notificaciones al procesar y despachar un nuevo pago</string>
+</resources>
