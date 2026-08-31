@@ -187,6 +187,33 @@ export function BookingSection({
       localStorage.setItem("pinzulia_bookings", JSON.stringify(existing.slice(0, 30)));
     } catch {}
 
+    // Background automated dispatch via WhatsApp Bot (Parrandón Engine)
+    const shoesText = includeShoes && shoeSizes.length > 0
+      ? `${shoeSizes.length} pares (${shoeSizes.join(", ")})`
+      : "Sin calzado";
+
+    const autoMessage = `🎳 *PinZulia Bowling Boutique & Gastropub (1963)*\n\n` +
+      `¡Hola * ${booking.clientName}*! Tu reservación ha sido generada exitosamente.\n\n` +
+      `🎟️ *Pase Digital:* #${booking.bookingCode}\n` +
+      `🎯 *Servicio:* ${booking.packageName}\n` +
+      `📅 *Fecha:* ${booking.date} a las ${booking.time}\n` +
+      `👥 *Jugadores:* ${booking.playersCount} Personas\n` +
+      `👟 *Calzado Sanitizado:* ${shoesText}\n` +
+      (booking.wantsBumpers ? `🛡️ *Bumpers:* Activados para niños\n` : "") +
+      `💵 *Total Estimado:* ${booking.totalUSD.toFixed(2)} USD\n\n` +
+      `👉 *Abre tu Pase VIP con Código QR aquí:*\nhttps://pin-zulia.vercel.app/ticket/${booking.bookingCode}\n\n` +
+      `📍 *Ubicación:* C.C. Internacional, Av. 5 de Julio, Maracaibo.\n` +
+      `_Presenta este boleto digital en la recepción para ingresar a tu pista._`;
+
+    fetch("/api/whatsapp/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: booking.clientPhone,
+        message: autoMessage,
+      }),
+    }).catch(() => {});
+
     setTimeout(() => {
       setIsSubmitting(false);
       onBookingSuccess(booking);

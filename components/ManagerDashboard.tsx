@@ -84,6 +84,7 @@ import { TransactionStore } from "@/lib/gateway/transactionStore";
 import { Transaction, ParsedBankNotification, IngestionChannel } from "@/lib/gateway/types";
 import { BowlingScorecard } from "@/components/BowlingScorecard";
 import { ByteBridgeSettings } from "@/components/ByteBridgeSettings";
+import { WhatsAppBotManager } from "@/components/WhatsAppBotManager";
 
 interface KitchenOrder {
   id: string;
@@ -444,6 +445,20 @@ export function ManagerDashboard({
           >
             <Zap className="w-3.5 h-3.5 text-amber-300" />
             <span>⚡ Pasarela Multi-Canal (3/3)</span>
+          </button>
+          <button
+            onClick={() => {
+              soundFX.playClick();
+              setActiveTab("whatsapp");
+            }}
+            className={`btn-tactile pb-3 px-1 text-xs sm:text-sm font-black uppercase italic transition-colors border-b-2 shrink-0 cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "whatsapp"
+                ? "border-emerald-400 text-emerald-400"
+                : "border-transparent text-slate-400 hover:text-white"
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+            <span>📲 Bot WhatsApp Entradas</span>
           </button>
           <button
             onClick={() => {
@@ -875,6 +890,9 @@ export function ManagerDashboard({
               </div>
             </div>
           )}
+
+          {/* TAB: WHATSAPP BOT AUTOMATION */}
+          {activeTab === "whatsapp" && <WhatsAppBotManager />}
 
           {/* TAB 4: QR RESERVATIONS & RECEPTION */}
           {activeTab === "reservas" && (
