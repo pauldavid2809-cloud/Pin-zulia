@@ -29,12 +29,13 @@ export async function POST(req: Request) {
       }
     } catch {}
 
-    const amountVES = Number((amountUSD * bcvRate).toFixed(2));
+    // MODO TEST: Forzado a 1.00 Bolívar
+    const amountVES = 1.00;
 
     const tx = TransactionStore.createTransaction({
       appId,
       referenceCode: referenceCode || `ORD-${Date.now().toString().slice(-4)}`,
-      amountUSD: Number(amountUSD.toFixed(2)),
+      amountUSD: 1.00,
       amountVES,
       bcvRate: Number(bcvRate.toFixed(2)),
       paymentMethod,

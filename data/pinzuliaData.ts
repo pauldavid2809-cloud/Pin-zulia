@@ -58,10 +58,10 @@ export type MenuCategory = {
 };
 
 export const OFFICIAL_RATES = {
-  bowlingHourUSD: 25.0, // PISTA $25 (5 personas / 1 hora)
+  bowlingHourUSD: 1.0, // MODO TEST: 1.00 // PISTA $25 (5 personas / 1 hora)
   bowlingMaxPlayers: 5,
-  shoeRentalUSD: 2.5, // Zapatos $2,5
-  poolHourUSD: 20.0, // MESA DE POOL $20 (4 personas / 1 hora)
+  shoeRentalUSD: 1.0, // MODO TEST: 1.00 // Zapatos $2,5
+  poolHourUSD: 1.0, // MODO TEST: 1.00 // MESA DE POOL $20 (4 personas / 1 hora)
   poolMaxPlayers: 4,
   currencyAccepted: "USD / VES a tasa BCV en vivo",
 };
@@ -97,7 +97,7 @@ export const BOOKING_PACKAGES: BookingPackage[] = [
     serviceType: "bowling",
     tagline: "Tarifa Oficial: 1 Hora • Hasta 5 personas",
     description: "Carril computarizado Brunswick™ para hasta 5 jugadores. Alquiler de calzado sanitizado por $2,5 c/u. Aceptamos a tasa BCV.",
-    priceUSD: 25,
+    priceUSD: 1.0,
     durationHours: 1,
     maxPlayers: 5,
     badge: "Oficial PinZulia",
@@ -117,7 +117,7 @@ export const BOOKING_PACKAGES: BookingPackage[] = [
     serviceType: "pool",
     tagline: "Tarifa Oficial: 1 Hora • Hasta 4 personas",
     description: "Mesas profesionales de billar/pool con paño de torneo, bolas Brunswick y tiza profesional. Hasta 4 jugadores.",
-    priceUSD: 20,
+    priceUSD: 1.0,
     durationHours: 1,
     maxPlayers: 4,
     badge: "PinZulia POOL",
@@ -137,7 +137,7 @@ export const BOOKING_PACKAGES: BookingPackage[] = [
     serviceType: "combo",
     tagline: "1h Bowling + 1h Pool • Ahorro especial",
     description: "La experiencia completa de PinZulia: 1 hora de pista de bowling para tu grupo más 1 hora de mesa de pool.",
-    priceUSD: 40,
+    priceUSD: 1.0,
     durationHours: 2,
     maxPlayers: 5,
     badge: "Combo Estrella",
@@ -156,7 +156,7 @@ export const BOOKING_PACKAGES: BookingPackage[] = [
     serviceType: "combo",
     tagline: "2h Bowling + Pinsa Romana + Cócteles",
     description: "2 horas continuas de pista con iluminación UV neón, 1 Pinsa Romana artesanal 72h y 4 cócteles Glow Neón de autor.",
-    priceUSD: 65,
+    priceUSD: 1.0,
     durationHours: 2,
     maxPlayers: 5,
     badge: "Experiencia VIP",
@@ -186,7 +186,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Pinsa Margarita di Búfala",
     category: "pinsas",
     description: "Masa madre 72h, salsa pomodoro San Marzano, mozzarella di búfala fresca, albahaca genovesa y aceite de oliva virgen extra.",
-    priceUSD: 14.0,
+    priceUSD: 1.0,
     badge: "Clásica",
     popular: true,
   },
@@ -195,7 +195,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Pinsa Cuatro Quesos & Pepperoni",
     category: "pinsas",
     description: "Mozzarella, gorgonzola, provolone ahumado, parmesano reggiano y láminas crocantes de pepperoni italiano.",
-    priceUSD: 16.0,
+    priceUSD: 1.0,
     badge: "Más Pedida",
     popular: true,
   },
@@ -204,7 +204,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Pinsa Prosciutto di Parma & Rúgula",
     category: "pinsas",
     description: "Prosciutto crudo importado, rúgula silvestre, lascas de queso pecorino y reducción balsámica de Módena.",
-    priceUSD: 18.0,
+    priceUSD: 1.0,
     badge: "Gourmet",
   },
   {
@@ -212,7 +212,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Strike Smash Burger Doble",
     category: "burgers",
     description: "Doble carne smash blend especial (160g), doble cheddar americano derretido, cebolla caramelizada, pepinillos y salsa de la casa en pan brioche tostado.",
-    priceUSD: 12.0,
+    priceUSD: 1.0,
     badge: "Top Seller",
     popular: true,
   },
@@ -221,14 +221,14 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "PinZulia Bacon BBQ Smash",
     category: "burgers",
     description: "Doble carne smash, tocineta ahumada crujiente, aros de cebolla crocantes, queso gouda y salsa BBQ ahumada al bourbon.",
-    priceUSD: 13.5,
+    priceUSD: 1.0,
   },
   {
     id: "tequenos-pinzulia-gigantes",
     name: "Tequeños Gigantes PinZulia (6 uds)",
     category: "snacks",
     description: "Tequeños tradicionales zulianos extra rellenos de queso de mano fundente, acompañados de salsa tártara de ajo porro.",
-    priceUSD: 9.0,
+    priceUSD: 1.0,
     badge: "Zuliano 100%",
     popular: true,
   },
@@ -237,7 +237,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Alitas Buffalo Crispy (10 uds)",
     category: "snacks",
     description: "Alitas de pollo apanadas súper crujientes, glaseadas en salsa Buffalo spicy, servidas con bastones de apio y aderezo Blue Cheese.",
-    priceUSD: 13.0,
+    priceUSD: 1.0,
     spicy: true,
   },
   {
@@ -245,7 +245,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Cóctel Glow Strike Neón UV",
     category: "cocteles",
     description: "Vodka premium, licor de curaÃ§ao azul, infusión de tónica quinina botánica (brilla activamente con la luz UV de la bolera) y cítricos.",
-    priceUSD: 8.0,
+    priceUSD: 1.0,
     badge: "Brilla con UV",
     glow: true,
     popular: true,
@@ -255,14 +255,14 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Perfect Game Gin Mule",
     category: "cocteles",
     description: "Ginebra Tanqueray, cerveza de jengibre artesanal, zumo de lima recién exprimido y hojas de menta maceradas con hielo picado.",
-    priceUSD: 9.0,
+    priceUSD: 1.0,
   },
   {
     id: "balde-cervezas-zulia-6",
     name: "Balde de Cervezas Zulia (6 uds)",
     category: "cervezas",
     description: "Cubeta con hielo frappé y 6 botellas de Cerveza Zulia vestidas de novia para compartir en tu carril o mesa de pool.",
-    priceUSD: 14.0,
+    priceUSD: 1.0,
     badge: "Promo Amigos",
     popular: true,
   },
@@ -271,7 +271,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Limonada Menta & Jengibre Frozen",
     category: "sin-alcohol",
     description: "Limonada frappé natural con hojas de menta fresca y un toque aromático de jengibre.",
-    priceUSD: 4.5,
+    priceUSD: 1.0,
   },
 ];
 

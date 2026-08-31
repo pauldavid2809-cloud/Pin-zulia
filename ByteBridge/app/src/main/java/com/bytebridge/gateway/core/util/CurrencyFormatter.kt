@@ -39,12 +39,7 @@ object CurrencyFormatter {
     }
 
     /**
-     * Cleans and extracts a valid Double amount from a messy string.
-     * Examples handled:
-     * - "$150.00" -> 150.0
-     * - "USD 85.50" -> 85.5
-     * - "Bs. 19.791,75" -> 19791.75
-     * - "19791.75" -> 19791.75
+     * Cleans and extracts a valid Double amount from any string format.
      */
     fun parseAmount(raw: String): Double? {
         val sanitized = raw.replace("(?i)Bs\\.?S?\\.?|VES|VEF|USD|\\$".toRegex(), "")
@@ -54,25 +49,36 @@ object CurrencyFormatter {
         if (sanitized.isEmpty()) return null
 
         try {
-            // Case 1: Standard Venezuelan format with dots for thousands and comma for decimal (19.791,75 or 19791,75)
-            if (sanitized.contains(',')) {
-                val normalized = sanitized.replace(".", "").replace(',', '.')
-                return normalized.toDoubleOrNull()
-            }
-
-            // Case 2: Standard US format with commas for thousands and dot for decimal (19,791.75 or 150.00)
+            // Case 1: Both dot and comma present (determine decimal separator by position)
             if (sanitized.contains('.') && sanitized.contains(',')) {
-                val normalized = sanitized.replace(",", "")
+                val lastDot = sanitized.lastIndexOf('.')
+                val lastComma = sanitized.lastIndexOf(',')
+                val normalized = if (lastComma > lastDot) {
+                    // Venezuelan format: 19.791,75 -> 19791.75
+                    sanitized.replace(".", "").replace(',', '.')
+                } else {
+                    // US format: 19,791.75 -> 19791.75
+                    sanitized.replace(",", "")
+                }
                 return normalized.toDoubleOrNull()
             }
 
-            // Case 3: Only contains dots (e.g. 150.00 or 19791.75 or 1.500)
+            // Case 2: Only contains comma (e.g. 19791,75 or 1,50)
+            if (sanitized.contains(',')) {
+                val parts = sanitized.split(',')
+                return if (parts.size > 2) {
+                    sanitized.replace(",", "").toDoubleOrNull()
+                } else {
+                    sanitized.replace(',', '.').toDoubleOrNull()
+                }
+            }
+
+            // Case 3: Only contains dot (e.g. 150.00 or 19791.75 or 1.500)
             if (sanitized.contains('.')) {
                 val parts = sanitized.split('.')
                 return when {
                     parts.size > 2 -> sanitized.replace(".", "").toDoubleOrNull()
-                    parts.last().length == 2 -> sanitized.toDoubleOrNull()
-                    parts.last().length == 3 -> sanitized.replace(".", "").toDoubleOrNull()
+                    parts.last().length == 3 && sanitized.length > 5 -> sanitized.replace(".", "").toDoubleOrNull()
                     else -> sanitized.toDoubleOrNull()
                 }
             }

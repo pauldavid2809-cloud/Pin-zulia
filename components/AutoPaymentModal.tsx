@@ -41,7 +41,7 @@ export function AutoPaymentModal({
   const [status, setStatus] = useState<"INITIALIZING" | "PENDING" | "APPROVED" | "FAILED">("INITIALIZING");
   const [userReference, setUserReference] = useState<string>("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [exactVES, setExactVES] = useState<number>(Number((amountUSD * bcvRate).toFixed(2)));
+  const [exactVES, setExactVES] = useState<number>(1.00);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [selectedBank, setSelectedBank] = useState<string>("Banesco");
 

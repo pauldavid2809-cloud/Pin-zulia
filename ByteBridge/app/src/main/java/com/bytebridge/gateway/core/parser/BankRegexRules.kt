@@ -11,7 +11,7 @@ object BankRegexRules {
     )
 
     val REFERENCE_PATTERN: Pattern = Pattern.compile(
-        """(?i)(?:ref(?:erencia)?\.?|nro\.?|operaci[oó]n|recibo|aprobaci[oó]n|conf(?:irmation)?(?:\s+code|\s+number|\s+#)?|trx|transaction\s+id)\s*[:#\-]?\s*([A-Za-z0-9]{6,18})""",
+        """(?i)(?:ref(?:erencia)?\.?|nro\.?|operaci[oó]n|recibo|aprobaci[oó]n|conf(?:irmation)?(?:\s+code|\s+number|\s+#)?|trx|transaction\s+id)\s*[:#\-]?\s*([A-Za-z0-9\-_]{6,24})""",
         Pattern.CASE_INSENSITIVE
     )
 
@@ -21,7 +21,7 @@ object BankRegexRules {
     )
 
     val CEDULA_PATTERN: Pattern = Pattern.compile(
-        """(?i)(?:ci\.?|c[ée]dula\.?|rif\.?|identificaci[oó]n\.?)\s*[:#\-]?\s*([VEJPGvejpg][\-.]?[0-9]{6,9})|([VEJPGvejpg][0-9]{7,9})""",
+        """(?i)(?:ci\.?|c[ée]dula\.?|rif\.?|identificaci[oó]n\.?|de\s+)?[:#\-]?\s*([VEJPGvejpg][\-.]?[0-9]{6,9})|([VEJPGvejpg][0-9]{7,9})""",
         Pattern.CASE_INSENSITIVE
     )
 
