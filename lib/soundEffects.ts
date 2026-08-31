@@ -48,9 +48,7 @@ class SoundFXEngine {
 
       osc.start();
       osc.stop(this.ctx.currentTime + 0.035);
-    } catch {
-      // Audio not permitted or inactive
-    }
+    } catch {}
   }
 
   // Heavy bowling ball rolling on wooden lane (filtered rumble)
@@ -58,33 +56,34 @@ class SoundFXEngine {
     if (this.isMuted) return;
     try {
       this.initCtx();
-      if (!this.ctx) return;
+      const ctx = this.ctx;
+      if (!ctx) return;
 
-      const bufferSize = this.ctx.sampleRate * 1.0;
-      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const bufferSize = ctx.sampleRate * 0.4;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
       const output = buffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) {
         output[i] = Math.random() * 2 - 1;
       }
 
-      const whiteNoise = this.ctx.createBufferSource();
+      const whiteNoise = ctx.createBufferSource();
       whiteNoise.buffer = buffer;
 
-      const filter = this.ctx.createBiquadFilter();
+      const filter = ctx.createBiquadFilter();
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(140, this.ctx.currentTime);
-      filter.frequency.linearRampToValueAtTime(260, this.ctx.currentTime + 0.9);
+      filter.frequency.setValueAtTime(140, ctx.currentTime);
+      filter.frequency.linearRampToValueAtTime(80, ctx.currentTime + 0.4);
 
-      const gain = this.ctx.createGain();
-      gain.gain.setValueAtTime(0.01, this.ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.25, this.ctx.currentTime + 0.7);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 1.0);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
 
       whiteNoise.connect(filter);
       filter.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(ctx.destination);
 
       whiteNoise.start();
+      whiteNoise.stop(ctx.currentTime + 0.4);
     } catch {}
   }
 
@@ -164,8 +163,6 @@ class SoundFXEngine {
       });
     } catch {}
   }
-}
-
 
   // Warning / Error Buzzer (e.g. already used ticket)
   public playBuzzer() {
@@ -188,5 +185,6 @@ class SoundFXEngine {
       osc.stop(now + 0.35);
     } catch {}
   }
+}
 
 export const soundFX = new SoundFXEngine();
