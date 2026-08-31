@@ -4,6 +4,7 @@ declare global {
   var __GATEWAY_TRANSACTIONS__: Map<string, Transaction> | undefined;
   var __GATEWAY_BANK_LOGS__: ParsedBankNotification[] | undefined;
   var __GATEWAY_PROCESSED_REFS__: Set<string> | undefined;
+  var __GATEWAY_CENT_COUNTER__: number | undefined;
 }
 
 if (!global.__GATEWAY_TRANSACTIONS__) {
@@ -14,6 +15,9 @@ if (!global.__GATEWAY_BANK_LOGS__) {
 }
 if (!global.__GATEWAY_PROCESSED_REFS__) {
   global.__GATEWAY_PROCESSED_REFS__ = new Set<string>();
+}
+if (global.__GATEWAY_CENT_COUNTER__ === undefined) {
+  global.__GATEWAY_CENT_COUNTER__ = 1;
 }
 
 const transactions = global.__GATEWAY_TRANSACTIONS__;
@@ -35,6 +39,14 @@ function isReferenceMatch(bankRef: string, userRef: string): boolean {
 }
 
 export const TransactionStore = {
+  // Generates unique cents (0.01 to 0.99) for anti-collision auto-matching
+  getUniqueCentAmount: (baseVES: number): number => {
+    const cent = (global.__GATEWAY_CENT_COUNTER__! % 90) + 10; // 0.10 to 0.99
+    global.__GATEWAY_CENT_COUNTER__ = (global.__GATEWAY_CENT_COUNTER__! + 1) % 90;
+    const integerPart = Math.floor(baseVES);
+    return Number((integerPart + cent / 100).toFixed(2));
+  },
+
   createTransaction: (data: Omit<Transaction, "id" | "status" | "createdAt" | "expiresAt">): Transaction => {
     const id = `tx_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date();
@@ -60,7 +72,6 @@ export const TransactionStore = {
     return Array.from(transactions.values()).reverse();
   },
 
-  // Customer submits their reference: Check if ByteBridge already captured it!
   updateBankReference: (id: string, bankReference: string, senderPhone?: string): Transaction | null => {
     const tx = transactions.get(id);
     if (!tx) return null;
@@ -68,14 +79,14 @@ export const TransactionStore = {
     tx.bankReference = bankReference.trim();
     if (senderPhone) tx.senderPhone = senderPhone;
 
-    // Scan existing bank logs (in case push arrived before customer typed reference)
+    // Scan bank logs for immediate match
     if (tx.status === "PENDING") {
       for (const log of bankLogs) {
-        const isMatch = isReferenceMatch(log.reference, tx.bankReference);
+        const isRefOk = isReferenceMatch(log.reference, tx.bankReference);
         const amountDiff = Math.abs(tx.amountVES - log.amountVES);
-        const isAmountMatch = amountDiff <= 2.0;
+        const isAmountOk = amountDiff < 0.05;
 
-        if (isMatch && isAmountMatch) {
+        if (isRefOk || isAmountOk) {
           tx.status = "APPROVED";
           tx.verifiedAt = new Date().toISOString();
           tx.verifiedChannel = log.channel;
@@ -92,14 +103,14 @@ export const TransactionStore = {
     return tx;
   },
 
-  // ByteBridge Push Ingestion with STRICT Reference Matching
+  // Dynamic Decimal Reconciliation Engine
   ingestBankNotification: (notification: ParsedBankNotification): IngestResponse => {
     bankLogs.unshift(notification);
     if (bankLogs.length > 80) bankLogs.pop();
 
     const cleanRef = notification.reference.trim();
 
-    // 1. Idempotency Check: Was this exact reference already processed?
+    // 1. Idempotency Check
     if (processedRefs.has(cleanRef)) {
       return {
         success: true,
@@ -109,14 +120,19 @@ export const TransactionStore = {
       };
     }
 
-    // 2. Scan Pending Transactions: STRICT MATCH (Customer MUST provide reference)
+    // 2. Scan Pending Transactions by EXACT UNIQUE DECIMAL AMOUNT
     for (const [id, tx] of transactions.entries()) {
-      if (tx.status === "PENDING" && tx.bankReference) {
-        const isRefMatch = isReferenceMatch(cleanRef, tx.bankReference);
+      if (tx.status === "PENDING") {
         const amountDiff = Math.abs(tx.amountVES - notification.amountVES);
-        const isAmountMatch = amountDiff <= 2.0;
+        const isExactCentMatch = amountDiff < 0.05; // Exact decimal match!
 
-        if (isRefMatch && isAmountMatch) {
+        let isRefMatch = false;
+        if (tx.bankReference) {
+          isRefMatch = isReferenceMatch(cleanRef, tx.bankReference);
+        }
+
+        // Match if unique cents match OR reference matches!
+        if (isExactCentMatch || isRefMatch) {
           tx.status = "APPROVED";
           tx.verifiedAt = new Date().toISOString();
           tx.verifiedChannel = notification.channel;
@@ -131,7 +147,7 @@ export const TransactionStore = {
             status: "MATCHED_AND_APPROVED",
             matchedTransactionId: tx.id,
             parsedData: notification,
-            message: `¡Transacción ${tx.referenceCode} aprobada por ${notification.channel} (${notification.bank}, Ref: ${cleanRef})!`,
+            message: `¡Transacción ${tx.referenceCode} auto-aprobada por céntimos únicos (Bs. ${notification.amountVES}, Ref: ${cleanRef})!`,
           };
         }
       }
@@ -141,7 +157,7 @@ export const TransactionStore = {
       success: true,
       status: "UNMATCHED_LOGGED",
       parsedData: notification,
-      message: `Pago [${notification.channel}] registrado en auditoría (Ref: ${cleanRef}, Bs. ${notification.amountVES}). Esperando que el cliente ingrese su referencia.`,
+      message: `Pago [${notification.channel}] registrado en auditoría (Ref: ${cleanRef}, Bs. ${notification.amountVES}).`,
     };
   },
 

@@ -17,17 +17,18 @@ export async function POST(req: Request) {
       metadata = {},
     } = body;
 
-    // In 1 Bolívar Test Mode: always 1.00 VES
     const safeAmountUSD = (!amountUSD || amountUSD <= 0) ? 1.0 : Number(amountUSD);
-    const amountVES = 1.00;
-    const bcvRate = 791.67;
+    
+    // Dynamic Cents: Generates unique decimals (e.g. Bs. 1.12, Bs. 1.13, Bs. 1.14...)
+    const baseVES = 1.00; // Base 1 Bolívar test
+    const exactAmountVES = TransactionStore.getUniqueCentAmount(baseVES);
 
     const tx = TransactionStore.createTransaction({
       appId,
       referenceCode: referenceCode || `ORD-${Date.now().toString().slice(-4)}`,
       amountUSD: safeAmountUSD,
-      amountVES,
-      bcvRate,
+      amountVES: exactAmountVES,
+      bcvRate: 791.67,
       paymentMethod,
       metadata,
     });
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
           telefono: PAYMENT_ACCOUNTS.pagoMovil.telefono,
           rif: PAYMENT_ACCOUNTS.pagoMovil.rif,
           titular: PAYMENT_ACCOUNTS.pagoMovil.titular,
-          exactAmountVES: 1.00,
+          exactAmountVES: exactAmountVES,
         },
         zelle: PAYMENT_ACCOUNTS.zelle,
         binance: PAYMENT_ACCOUNTS.binance,
