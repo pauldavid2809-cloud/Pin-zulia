@@ -4,40 +4,30 @@ import { PAYMENT_ACCOUNTS } from "@/data/pinzuliaData";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {}
+
     const {
-      amountUSD,
+      amountUSD = 1.0,
       referenceCode,
       paymentMethod = "pago_movil",
       appId = "pinzulia",
       metadata = {},
     } = body;
 
-    if (!amountUSD || amountUSD <= 0) {
-      return NextResponse.json({ error: "Monto inválido" }, { status: 400 });
-    }
-
-    // Fetch live BCV rate from our DolarAPI endpoint
-    let bcvRate = 791.67;
-    try {
-      const bcvRes = await fetch("https://ve.dolarapi.com/v1/dolares/oficial", {
-        next: { revalidate: 300 },
-      });
-      if (bcvRes.ok) {
-        const bcvData = await bcvRes.json();
-        if (bcvData.promedio) bcvRate = Number(bcvData.promedio);
-      }
-    } catch {}
-
-    // MODO TEST: Forzado a 1.00 Bolívar
+    // In 1 Bolívar Test Mode: always 1.00 VES
+    const safeAmountUSD = (!amountUSD || amountUSD <= 0) ? 1.0 : Number(amountUSD);
     const amountVES = 1.00;
+    const bcvRate = 791.67;
 
     const tx = TransactionStore.createTransaction({
       appId,
       referenceCode: referenceCode || `ORD-${Date.now().toString().slice(-4)}`,
-      amountUSD: 1.00,
+      amountUSD: safeAmountUSD,
       amountVES,
-      bcvRate: Number(bcvRate.toFixed(2)),
+      bcvRate,
       paymentMethod,
       metadata,
     });
@@ -51,7 +41,7 @@ export async function POST(req: Request) {
           telefono: PAYMENT_ACCOUNTS.pagoMovil.telefono,
           rif: PAYMENT_ACCOUNTS.pagoMovil.rif,
           titular: PAYMENT_ACCOUNTS.pagoMovil.titular,
-          exactAmountVES: amountVES,
+          exactAmountVES: 1.00,
         },
         zelle: PAYMENT_ACCOUNTS.zelle,
         binance: PAYMENT_ACCOUNTS.binance,
